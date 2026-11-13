@@ -1,0 +1,22 @@
+{
+  "schema_version":"chat-evidence/0.1.0",
+  "mode":"synthetic",
+  "experiment_id":"00000000-0000-4000-8000-000000000001",
+  "workload_version":"chat-workload/0.1.0",
+  "profile_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "checkpoint_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "runtime_recipe_sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "host_profile_sha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "events":[
+    {"at_millis":0,"phase":"queue","pressure":"normal","metrics":[]},
+    {"at_millis":10,"phase":"generate","pressure":"normal","metrics":[
+      {"kind":"rss_bytes","value":1024,"origin":"synthetic","missing_reason":null},
+      {"kind":"metal_bytes","value":null,"origin":"unavailable","missing_reason":"no_validated_probe"},
+      {"kind":"ttft_millis","value":null,"origin":"unavailable","missing_reason":"buffered_transport"},
+      {"kind":"prompt_tokens","value":24,"origin":"synthetic","missing_reason":null},
+      {"kind":"output_tokens","value":4,"origin":"synthetic","missing_reason":null}
+    ]},
+    {"at_millis":20,"phase":"cleanup","pressure":"normal","metrics":[]}
+  ],
+  "summary":{"outcome":"completed","cause":null,"elapsed_millis":20,"cleanup_confirmed":true,"generation_completed":true,"task_resolved":null,"sources_available":0,"pages_attempted":0,"pages_read":0,"valid_citations":0}
+}

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seiya.invalid/contracts/reader-ipc/v0.1-draft.1/request.schema.json",
+  "title": "Seiya experimental reader request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "run_id", "remaining_ms", "sources"],
+  "properties": {
+    "version": {"const": "0.1-draft.1"},
+    "run_id": {"$ref": "#/$defs/id"},
+    "remaining_ms": {"type": "integer", "minimum": 1, "maximum": 45000},
+    "sources": {
+      "type": "array", "minItems": 1, "maxItems": 3,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "url"],
+        "properties": {
+          "id": {"$ref": "#/$defs/id"},
+          "url": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"}
+        }
+      }
+    }
+  },
+  "$defs": {"id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9_-]+$"}}
+}

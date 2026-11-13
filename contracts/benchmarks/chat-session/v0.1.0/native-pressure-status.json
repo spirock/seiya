@@ -1,0 +1,4 @@
+{
+  "notice":"Version4 native macOS pressure with audited non-forking fixture Child and native lease. No model, allocation approval or general descendant containment.",
+  "stopped":{"version":4,"mode":"native-fixture-supervisor","model_inference":false,"stage":"stopped","cause":{"memory":"pressure_not_normal"},"cleanup_failure":null,"attempts":1,"owned_members":1,"runtime_reaped":true,"lease_release_confirmed":true,"lease_origin":"native_coordination_lock","runtime_origin":"native_fixture_child","pressure_origin":"native_macos_sysctl"}
+}

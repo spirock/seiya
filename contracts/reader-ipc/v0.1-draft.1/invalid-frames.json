@@ -1,0 +1,8 @@
+[
+  {"kind":"request","frame":"{\"version\":\"0.1-draft.1\",\"run_id\":\"run-1\",\"run_id\":\"run-1\",\"remaining_ms\":1,\"sources\":[]}"},
+  {"kind":"request","frame":"{\"version\":\"0.1-draft.1\",\"run_id\":\"run-1\",\"remaining_ms\":true,\"sources\":[{\"id\":\"source-1\",\"url\":\"https://example.org/article\"}]}"},
+  {"kind":"request","frame":"{\"version\":\"0.1-draft.1\",\"run_id\":\"run-1\",\"remaining_ms\":1,\"sources\":[{\"id\":\"source-1\",\"url\":\"https://example.org/article\",\"grant\":true}]}"},
+  {"kind":"response","frame":"{\"version\":\"0.1-draft.1\",\"run_id\":\"other\",\"results\":[]}"},
+  {"kind":"response","frame":"{\"version\":\"0.1-draft.1\",\"run_id\":\"run-1\",\"results\":[{\"id\":\"source-1\",\"status\":\"timeout\",\"text\":\"untrusted\",\"text_truncated\":false,\"received_bytes\":0,\"decoded_bytes\":0,\"header_bytes\":0,\"get_count\":0}]}"},
+  {"kind":"response","frame":"{}{}"}
+]

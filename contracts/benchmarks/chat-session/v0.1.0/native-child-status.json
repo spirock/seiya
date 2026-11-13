@@ -1,0 +1,4 @@
+{
+  "notice":"Version3 native fixture Child plus native lease. Audited non-forking repository helper only, injected pressure, no model or general descendant containment.",
+  "stopped":{"version":3,"mode":"native-fixture-supervisor","model_inference":false,"stage":"stopped","cause":{"memory":"pressure_not_normal"},"cleanup_failure":null,"attempts":1,"owned_members":1,"runtime_reaped":true,"lease_release_confirmed":true,"lease_origin":"native_coordination_lock","runtime_origin":"native_fixture_child","pressure_origin":"injected_fixture"}
+}

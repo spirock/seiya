@@ -1,0 +1,41 @@
+{
+  "fixture_version": 1,
+  "base_request": {"model":"pegassus","swarm_mode":"fast","messages":[{"role":"user","content":"Synthetic request."}]},
+  "invalid_requests": [
+    {"id":"not_object","body":[],"error":"request must be an object"},
+    {"id":"missing_messages","body":{},"error":"messages must contain 1–100 messages"},
+    {"id":"empty_messages","patch":{"messages":[]},"error":"messages must contain 1–100 messages"},
+    {"id":"legacy_model","patch":{"model":"seiya"},"error":"the exposed model ID is pegassus"},
+    {"id":"unknown_role","patch":{"messages":[{"role":"developer","content":"x"}]},"error":"unsupported message role"},
+    {"id":"image_content","patch":{"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.invalid/image.png"}}]}]},"error":"text-only messages are supported"},
+    {"id":"tool_without_id","patch":{"messages":[{"role":"tool","content":"fixture"}]},"error":"tool messages require tool_call_id"},
+    {"id":"zero_tokens","patch":{"max_tokens":0},"error":"max_tokens must be an integer between 1 and 4096"},
+    {"id":"too_many_tokens","patch":{"max_tokens":4097},"error":"max_tokens must be an integer between 1 and 4096"},
+    {"id":"boolean_tokens","patch":{"max_tokens":true},"error":"max_tokens must be an integer between 1 and 4096"},
+    {"id":"negative_temperature","patch":{"temperature":-0.1},"error":"temperature must be 0–2"},
+    {"id":"too_high_temperature","patch":{"temperature":2.1},"error":"temperature must be 0–2"},
+    {"id":"boolean_temperature","patch":{"temperature":false},"error":"temperature must be 0–2"},
+    {"id":"string_stream","patch":{"stream":"false"},"error":"stream must be boolean"},
+    {"id":"unknown_mode","patch":{"swarm_mode":"auto"},"error":"swarm_mode must be fast or consensus"},
+    {"id":"tool_choice","patch":{"tool_choice":"auto"},"error":"tool_choice is not supported in this version"},
+    {"id":"response_format","patch":{"response_format":{"type":"json_object"}},"error":"response_format is not supported in this version"},
+    {"id":"logprobs","patch":{"logprobs":false},"error":"logprobs is not supported in this version"},
+    {"id":"parallel_calls","patch":{"parallel_tool_calls":false},"error":"parallel_tool_calls is not supported in this version"},
+    {"id":"tools_not_list","patch":{"tools":{}},"error":"tools must be a list of at most 64 function tools"},
+    {"id":"non_function_tool","patch":{"tools":[{"type":"custom"}]},"error":"only function tools are supported"},
+    {"id":"missing_function_name","patch":{"tools":[{"type":"function","function":{}}]},"error":"tool requires function.name"},
+    {"id":"duplicate_tool_names","patch":{"tools":[{"type":"function","function":{"name":"read"}},{"type":"function","function":{"name":"read"}}]},"error":"tool names must be unique; parameters must be an object"},
+    {"id":"parameters_not_object","patch":{"tools":[{"type":"function","function":{"name":"read","parameters":[]}}]},"error":"tool names must be unique; parameters must be an object"}
+  ],
+  "invalid_backend_calls": [
+    {"id":"malformed_json","calls":[{"id":"call-1","type":"function","function":{"name":"read","arguments":"{"}}]},
+    {"id":"arguments_not_object","calls":[{"id":"call-1","type":"function","function":{"name":"read","arguments":"[]"}}]},
+    {"id":"arguments_not_string","calls":[{"id":"call-1","type":"function","function":{"name":"read","arguments":{}}}]},
+    {"id":"empty_id","calls":[{"id":"","type":"function","function":{"name":"read","arguments":"{}"}}]},
+    {"id":"duplicate_ids","calls":[{"id":"same","type":"function","function":{"name":"read","arguments":"{}"}},{"id":"same","type":"function","function":{"name":"read","arguments":"{}"}}]},
+    {"id":"wrong_call_type","calls":[{"id":"call-1","type":"custom","function":{"name":"read","arguments":"{}"}}]},
+    {"id":"calls_not_list","calls":{"unexpected":true},"error":"invalid tool_calls array"}
+  ],
+  "limits": {"body_bytes":262144,"messages":100,"tools":64,"max_tokens_min":1,"max_tokens_max":4096,"temperature_min":0,"temperature_max":2},
+  "queue_errors": {"full":"request queue full (one active, two waiting); retry later","timeout":"timed out waiting for the active request; retry later"}
+}

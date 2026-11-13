@@ -1,0 +1,5 @@
+{
+  "notice":"Version5 restricted owned runtime. Fixture uses no model; model-capable origin uses null inference observation until independently measured. Not public health or evidence of MLX compatibility.",
+  "fixture_pressure_stopped":{"version":5,"mode":"native-restricted-supervisor","model_inference":false,"stage":"stopped","cause":{"memory":"pressure_not_normal"},"cleanup_failure":null,"attempts":1,"owned_members":1,"runtime_reaped":true,"lease_release_confirmed":true,"lease_origin":"native_coordination_lock","runtime_origin":"native_restricted_fixture_child","pressure_origin":"injected_fixture","containment":"macos_process_fork_denied_v1"},
+  "model_capable_inference_not_observed":{"model_inference":null,"runtime_origin":"native_restricted_mlx_child","containment":"macos_process_fork_denied_v1"}
+}

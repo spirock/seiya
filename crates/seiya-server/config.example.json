@@ -1,0 +1,4 @@
+{
+  "listen": "127.0.0.1:8012",
+  "api_key_env": "SEIYA_RUST_API_KEY"
+}

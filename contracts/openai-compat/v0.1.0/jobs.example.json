@@ -1,0 +1,18 @@
+{
+  "mode": "fast",
+  "worker": "orchestrator",
+  "timeout_seconds": 180,
+  "max_output_tokens": 256,
+  "models": [
+    {
+      "id": "orchestrator",
+      "model": "gemma4:e2b-mlx",
+      "backend": "ollama",
+      "base_url": "http://127.0.0.1:11434/v1"
+    }
+  ],
+  "jobs": {
+    "base_url": "http://127.0.0.1:49152/internal/jobs/v1",
+    "api_key_env": "SEIYA_JOBS_KEY"
+  }
+}

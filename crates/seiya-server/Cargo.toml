@@ -1,0 +1,26 @@
+[package]
+name = "seiya-server"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.89"
+license.workspace = true
+description = "Experimental Seiya discovery server and internal local inference adapter"
+
+[dependencies]
+axum.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+subtle.workspace = true
+reqwest.workspace = true
+uuid.workspace = true
+seiya-observe = { path = "../seiya-observe" }
+seiya-contracts = { path = "../seiya-contracts" }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+webpki-roots = "1"
+html5ever = "0.35"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+tokio = { workspace = true, features = ["io-util", "time", "sync", "test-util"] }

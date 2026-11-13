@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Seiya native session request (proposed, not implemented by the Python API)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "request_id", "conversation_id", "execution", "privacy", "messages"],
+  "properties": {
+    "contract_version": {"const": "1.0-draft.1"},
+    "request_id": {"$ref": "#/$defs/id"},
+    "conversation_id": {"$ref": "#/$defs/id"},
+    "execution": {"enum": ["auto", "single", "swarm", "remote"]},
+    "privacy": {"enum": ["local_only", "network_allowed"]},
+    "messages": {"type": "array", "minItems": 1, "maxItems": 100, "items": {"$ref": "#/$defs/message"}}
+  },
+  "allOf": [{
+    "if": {"properties": {"execution": {"const": "remote"}}},
+    "then": {"properties": {"privacy": {"const": "network_allowed"}}}
+  }],
+  "$defs": {
+    "id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
+    "message": {
+      "type": "object", "additionalProperties": false,
+      "required": ["role", "content"],
+      "properties": {
+        "role": {"enum": ["user", "assistant"]},
+        "content": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"$ref": "#/$defs/content"}}
+      }
+    },
+    "content": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["type", "text"],
+         "properties": {"type": {"const": "text"}, "text": {"type": "string", "maxLength": 32768}}},
+        {"type": "object", "additionalProperties": false, "required": ["type", "asset_id"],
+         "properties": {"type": {"const": "image"}, "asset_id": {"$ref": "#/$defs/id"}}}
+      ]
+    }
+  },
+  "$comment": "The host must enforce the 262144 raw-byte limit before parsing and validate effective capabilities, assets, permissions and remote destinations separately."
+}

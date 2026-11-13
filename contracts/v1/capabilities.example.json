@@ -1,0 +1,12 @@
+{
+  "contract_version": "1.0-draft.1",
+  "example_only": true,
+  "notice": "Hypothetical future iOS host. Not a description of the current Seiya runtime.",
+  "platform": "ios",
+  "supported_execution": ["auto", "single"],
+  "input_modalities": ["text"],
+  "tools": [],
+  "limits": {"payload_bytes": 262144, "messages": 100, "context_tokens": null, "output_tokens": null},
+  "models": [{"id": "pegassus", "status": "not_validated", "engine": null}],
+  "remote_pairing_available": false
+}

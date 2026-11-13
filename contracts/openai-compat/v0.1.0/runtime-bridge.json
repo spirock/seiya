@@ -1,0 +1,16 @@
+{
+  "notice": "Opt-in local Python frontend to existing Rust worker. No runtime launch, model load approval or native supervisor health.",
+  "handshake": {"version": 1, "model_binding": "hex-utf8-v1"},
+  "python_config": {
+    "mode": "fast", "worker": "fixture", "timeout_seconds": 1, "max_output_tokens": 32,
+    "models": [{"id": "fixture", "model": "synthetic", "backend": "mlx", "base_url": "http://127.0.0.1:19081/v1"}],
+    "runtime_bridge": {"base_url": "http://127.0.0.1:19082/v1", "api_key_env": "SEIYA_BRIDGE_KEY"}
+  },
+  "rust_config": {
+    "listen": "127.0.0.1:19082", "api_key_env": "SEIYA_BRIDGE_KEY", "runtime_status": true,
+    "runtime": {"id": "fixture", "model": "synthetic", "backend": "mlx", "base_url": "http://127.0.0.1:19081/v1", "timeout_seconds": 1, "max_output_tokens": 32}
+  },
+  "backend_model_header": {"name": "x-seiya-model-binding", "value": "73796e746865746963"},
+  "frontend_health": {"version":1,"model_residency":"unknown","admission":"may_attempt","endpoint_observation":"not_checked","memory_admission":"not_integrated"},
+  "frontend_error": {"error":{"code":"runtime_unavailable","message":"synthetic offline"}}
+}

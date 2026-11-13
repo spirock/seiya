@@ -1,0 +1,8 @@
+{
+  "notice":"Opt-in Rust runtime_status:true only; cached observations, no live probes or memory admission. Legacy default unchanged.",
+  "status_version":1,
+  "initial":{"version":1,"endpoint_observation":"not_checked","model_residency":"unknown","admission":"may_attempt","memory_admission":"not_integrated","active_requests":0},
+  "not_connected":{"http_status":503,"body":{"error":{"code":"runtime_unavailable","message":"local runtime connection was not established; verify the runtime before restarting this experimental instance"}}},
+  "unconfirmed":{"http_status":503,"body":{"error":{"code":"runtime_state_unconfirmed","message":"runtime state is unconfirmed; verify backend completion before recovery"}}},
+  "completed":{"version":1,"endpoint_observation":"last_request_completed","model_residency":"unknown","admission":"may_attempt","memory_admission":"not_integrated","active_requests":0}
+}

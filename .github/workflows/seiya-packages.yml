@@ -1,0 +1,238 @@
+name: Seiya packages
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'swarm-app/**'
+      - 'docs/**'
+      - 'contracts/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'Makefile'
+      - '.github/scripts/**'
+      - '.github/workflows/seiya-packages.yml'
+  pull_request:
+    paths:
+      - 'swarm-app/**'
+      - 'docs/**'
+      - 'contracts/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'Makefile'
+      - '.github/scripts/**'
+      - '.github/workflows/seiya-packages.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+      - run: cargo fmt --all -- --check
+      - name: Keep private development files out of tracked publication
+        run: |
+          if git ls-files | grep -E '(^|/)(AGENTS\.md|AGENT\.md|agent\.md|agents\.md|\.gitignore)$|^plans/'; then
+            echo 'Private instructions/ignore files must remain local only.'
+            exit 1
+          fi
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - run: make test-image-ui
+
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: swarm-app
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Unit and archive tests (no model downloads)
+        run: python -m unittest discover -s tests -v
+      - name: Build experimental Rust executables (no model/runtime startup)
+        working-directory: .
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '13.0'
+        run: |
+          cargo build --release --locked -p seiya-server --bins
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            cargo test --locked -p seiya-server --lib
+          fi
+          mkdir -p native-stage/bin native-dist
+          cp target/release/seiya-server target/release/seiya-desktop native-stage/bin/
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            cp target/release/seiya-image-web target/release/seiya-web-diagnostics native-stage/bin/
+          fi
+          cp docs/PAQUETES_PRUEBA.md native-stage/README.md
+          printf 'commit=%s\nos=%s\narch=%s\n' "$GITHUB_SHA" '${{ runner.os }}' '${{ runner.arch }}' > native-stage/BUILD-INFO.txt
+          tar -czf "native-dist/seiya-rust-${{ runner.os }}-${{ runner.arch }}.tar.gz" -C native-stage .
+          cd native-dist
+          shasum -a 256 *.tar.gz > SHA256SUMS
+      - name: Select explicit package architecture
+        run: |
+          case '${{ runner.arch }}' in
+            X64) echo 'SEIYA_PACKAGE_ARCH=amd64' >> "$GITHUB_ENV" ;;
+            ARM64) echo 'SEIYA_PACKAGE_ARCH=arm64' >> "$GITHUB_ENV" ;;
+            *) exit 1 ;;
+          esac
+      - name: Build Rust Debian package (no Python runtime)
+        if: runner.os == 'Linux'
+        run: |
+          LIBC_MIN="$(getconf GNU_LIBC_VERSION | cut -d ' ' -f 2)"
+          python packaging/build.py deb --implementation rust --bin-dir ../target/release --arch "$SEIYA_PACKAGE_ARCH" --libc-min "$LIBC_MIN" --revision "$GITHUB_SHA" --output dist/rust
+          dpkg-deb --info dist/rust/seiya-rust-experimental_*.deb
+          dpkg-deb --contents dist/rust/seiya-rust-experimental_*.deb
+          dpkg-deb --extract dist/rust/seiya-rust-experimental_*.deb "$RUNNER_TEMP/seiya-rust-extracted"
+          python packaging/inspect_rust.py "$RUNNER_TEMP/seiya-rust-extracted" --platform linux --arch "$SEIYA_PACKAGE_ARCH"
+          "$RUNNER_TEMP/seiya-rust-extracted/usr/lib/seiya-rust/bin/seiya-desktop" --help
+          "$RUNNER_TEMP/seiya-rust-extracted/usr/lib/seiya-rust/bin/seiya-desktop" --version
+          readelf -d ../target/release/seiya-desktop
+      - name: Build Rust macOS package and disk image (unsigned)
+        if: runner.os == 'macOS'
+        run: |
+          python packaging/build.py dmg --implementation rust --bin-dir ../target/release --arch "$SEIYA_PACKAGE_ARCH" --revision "$GITHUB_SHA" --output dist/rust
+          pkgutil --payload-files dist/rust/Seiya-Rust-*.pkg
+          pkgutil --expand-full dist/rust/Seiya-Rust-*.pkg "$RUNNER_TEMP/seiya-rust-expanded"
+          python packaging/inspect_rust.py "$RUNNER_TEMP/seiya-rust-expanded/Payload" --platform macos --arch "$SEIYA_PACKAGE_ARCH"
+          "$RUNNER_TEMP/seiya-rust-expanded/Payload/Applications/Seiya Rust.app/Contents/MacOS/seiya-desktop" --help
+          "$RUNNER_TEMP/seiya-rust-expanded/Payload/Applications/Seiya Rust.app/Contents/MacOS/seiya-desktop" --version
+          hdiutil verify dist/rust/Seiya-Rust-*.dmg
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: seiya-rust-packages-${{ runner.os }}-${{ runner.arch }}
+          path: swarm-app/dist/rust/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: seiya-rust-${{ runner.os }}-${{ runner.arch }}
+          path: native-dist/
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      RUSTFLAGS: '-C target-feature=+crt-static'
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.11'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: x86_64-pc-windows-msvc
+      - name: Windows packaging tests (synthetic PE, never installed)
+        run: python -m unittest discover -s swarm-app/tests -p test_packaging_windows.py -v
+      - name: Check Windows Rust and offline contracts
+        run: |
+          cargo clippy -p seiya-server --bins --locked --target x86_64-pc-windows-msvc -- -D warnings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test -p seiya-server --locked --target x86_64-pc-windows-msvc --test cli --test config --test windows_package
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build native Windows executables
+        run: |
+          cargo build --release --locked --target x86_64-pc-windows-msvc -p seiya-server --bin seiya-desktop --bin seiya-server
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package ZIP and inspect extracted payload (no installer/runtime startup)
+        run: |
+          python swarm-app/packaging/windows.py zip --bin-dir target/x86_64-pc-windows-msvc/release --output dist/windows-portable --revision "$env:GITHUB_SHA"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $payload = Join-Path $env:RUNNER_TEMP 'seiya-windows-payload'
+          Expand-Archive -Path dist/windows-portable/Seiya-Rust-0.1.0-windows-x64.zip -DestinationPath $payload
+          python swarm-app/packaging/windows.py inspect --payload-dir "$payload"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$payload/seiya-desktop.exe" --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$payload/seiya-desktop.exe" --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$payload/seiya-server.exe" --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$payload/seiya-server.exe" check-config --config "$payload/server.discovery.example.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Inspect DLL dependencies (no VC runtime installation)
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $vs = & $vswhere -latest -property installationPath
+          $dumpbin = Get-ChildItem "$vs/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe" | Sort-Object FullName | Select-Object -Last 1
+          if (-not $dumpbin) { throw 'Preinstalled dumpbin missing' }
+          foreach ($name in @('seiya-desktop.exe', 'seiya-server.exe')) {
+            $dlls = & $dumpbin.FullName /dependents "target/x86_64-pc-windows-msvc/release/$name"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $dlls | Write-Output
+            if ($dlls -match '(?i)(VCRUNTIME[0-9_]*|MSVCP[0-9_]*)\.dll') { throw 'Unexpected dynamic VC++ runtime dependency' }
+          }
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: seiya-rust-Windows-X64-portable
+          path: dist/windows-portable/
+          if-no-files-found: error
+      - name: Compile per-user installer with preinstalled InnoSetup (never install)
+        run: |
+          $candidate = Get-Command ISCC.exe -CommandType Application -ErrorAction SilentlyContinue
+          $compiler = if ($candidate) { $candidate.Source } else {
+            @("${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe", "$env:ProgramFiles/Inno Setup 6/ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          if (-not $compiler) { throw 'Preinstalled InnoSetup missing; no automatic installation permitted' }
+          $payload = Join-Path $env:RUNNER_TEMP 'seiya-windows-payload'
+          python swarm-app/packaging/windows.py setup --payload-dir "$payload" --output dist/windows-setup --compiler "$compiler"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: seiya-rust-Windows-X64-installer
+          path: dist/windows-setup/
+          if-no-files-found: error
+
+  downloads:
+    needs: [contracts, build, windows]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Update README only for the current successful main build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]; then
+            echo 'A newer commit exists; leaving its download block untouched.'
+            exit 0
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" > "$RUNNER_TEMP/seiya-artifacts.json"
+          python .github/scripts/update_downloads.py --readme README.md --artifacts "$RUNNER_TEMP/seiya-artifacts.json" --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --sha "$GITHUB_SHA"
+          git diff --check
+          if git diff --quiet -- README.md; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- README.md
+          git commit -m 'Update verified installer download links [skip ci]'
+          git push origin HEAD:main

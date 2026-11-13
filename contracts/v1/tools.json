@@ -1,0 +1,19 @@
+{
+  "contract_version": "1.0-draft.1",
+  "notice": "Target catalogue only. Planned tools must never be advertised as implemented. web_search in the Python prototype is separate from this future broker.",
+  "tools": [
+    {"name":"web_search","version":"1","status":"planned","platforms":["macos","linux","windows","ios"],"effects":["network"],"requires_confirmation":false},
+    {"name":"web_fetch","version":"1","status":"planned","platforms":["macos","linux","windows","ios"],"effects":["network"],"requires_confirmation":false},
+    {"name":"files_list","version":"1","status":"planned","platforms":["macos","linux","windows","ios"],"effects":["local_read"],"requires_confirmation":false},
+    {"name":"files_read","version":"1","status":"planned","platforms":["macos","linux","windows","ios"],"effects":["local_read"],"requires_confirmation":false},
+    {"name":"files_write","version":"1","status":"planned","platforms":["macos","linux","windows","ios"],"effects":["local_write"],"requires_confirmation":true},
+    {"name":"apps_open","version":"1","status":"planned","platforms":["macos"],"effects":["app_open"],"requires_confirmation":false},
+    {"name":"mail_list_messages","version":"1","status":"planned","platforms":["macos"],"effects":["mail_read"],"requires_confirmation":false},
+    {"name":"mail_read_message","version":"1","status":"planned","platforms":["macos"],"effects":["mail_read"],"requires_confirmation":false},
+    {"name":"mail_send_message","version":"1","status":"planned","platforms":["macos"],"effects":["mail_send"],"requires_confirmation":true},
+    {"name":"screen_capture","version":"1","status":"planned","platforms":["macos"],"effects":["screen_capture"],"requires_confirmation":true},
+    {"name":"ui_inspect","version":"1","status":"planned","platforms":["macos"],"effects":["ui_control"],"requires_confirmation":false},
+    {"name":"ui_action","version":"1","status":"planned","platforms":["macos"],"effects":["ui_control"],"requires_confirmation":true},
+    {"name":"shell_run","version":"1","status":"planned","platforms":["macos","linux","windows"],"effects":["process_execute"],"requires_confirmation":true}
+  ]
+}

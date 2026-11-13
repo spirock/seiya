@@ -1,0 +1,14 @@
+{
+  "listen": "127.0.0.1:8012",
+  "api_key_env": "SEIYA_RUST_API_KEY",
+  "queue_wait_ms": 120000,
+  "request_read_timeout_ms": 30000,
+  "runtime": {
+    "id": "worker",
+    "backend": "mlx",
+    "model": "/ABSOLUTE/PATH/TO/ALREADY_DOWNLOADED_CHECKPOINT",
+    "base_url": "http://127.0.0.1:8081/v1",
+    "timeout_seconds": 180,
+    "max_output_tokens": 2048
+  }
+}

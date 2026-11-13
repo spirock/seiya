@@ -1,0 +1,57 @@
+{
+  "version":1,
+  "status":"specified-not-executed",
+  "runner_implemented":true,
+  "simulation_runner_implemented":true,
+  "authorization_required":true,
+  "ownership":"own-processes-only",
+  "runtime_policy":"one-runtime-at-a-time",
+  "comparison":{
+    "arms":["python","rust"],
+    "block_order":["python","rust","rust","python"],
+    "blocks":3,
+    "model_identity":"same-local-checkpoint-manifest",
+    "cold_definition":"fresh-runtime-process-not-cold-disk",
+    "runtime_settings":{"backend":"mlx","temperature":0,"max_output_tokens":256,"decode_concurrency":1,"prompt_concurrency":1,"prefill_step_size":256,"prompt_cache_size":1,"prompt_cache_bytes":"128MB","enable_thinking":false},
+    "request":{"model":"pegassus","swarm_mode":"fast","max_tokens":256,"stream":true},
+    "arms_config":{"python":{"mode":"fast","max_output_tokens":256},"rust":{"max_output_tokens":256}},
+    "required_backend_equal_fields":["model","messages","tools","temperature","max_tokens","stream","chat_template_kwargs"],
+    "cross_arm_normalization":"tool-call-ids-only-bijective; never mutate transmitted history",
+    "request_deadline_seconds":240,
+    "auxiliary_requests_allowed":false
+  },
+  "payloads":{
+    "text_messages":[{"role":"user","content":"Reply exactly MEMORY_BASELINE_OK."}],
+    "expected_text":"MEMORY_BASELINE_OK",
+    "tool_messages":[{"role":"user","content":"Use read to read fixture.txt. Then reply exactly with the returned content."}],
+    "tools":[{"type":"function","function":{"name":"read","parameters":{"type":"object","properties":{"path":{"type":"string","enum":["fixture.txt"]}},"required":["path"],"additionalProperties":false}}}],
+    "expected_tool_arguments":{"path":"fixture.txt"},
+    "synthetic_tool_result":"MEMORY_TOOL_OK_47",
+    "expected_final_text":"MEMORY_TOOL_OK_47",
+    "execute_host_tools":false
+  },
+  "workload":[
+    {"phase":"listener-ready","operation":"health-and-models-only","idle_seconds":2},
+    {"phase":"cold-text","operation":"one-synthetic-text-request"},
+    {"phase":"tool-roundtrip","operation":"structured-read-and-synthetic-result"},
+    {"phase":"warm-repeat","operation":"repeat-same-text-request","repetitions":3},
+    {"phase":"idle","operation":"no-generation","idle_seconds":10},
+    {"phase":"resume","operation":"repeat-same-text-request"},
+    {"phase":"shutdown","operation":"drain-and-stop-owned-processes"}
+  ],
+  "sampling":{"interval_ms":1000,"phase_boundary_snapshots":true,"clock":"monotonic","record_missing_samples":true},
+  "required_process_roles":["runtime","coordinator","collector"],
+  "optional_process_roles":["opencode-cli","opencode-private-server"],
+  "metrics":[
+    {"name":"process_rss","unit":"bytes","scope":"each-owned-pid","method":"ps-rss-kib-times-1024","availability":"planned"},
+    {"name":"process_footprint","unit":"bytes","scope":"each-owned-pid","method":null,"availability":"unsupported"},
+    {"name":"mlx_active_memory","unit":"bytes","scope":"runtime","method":null,"availability":"unsupported"},
+    {"name":"metal_allocated_memory","unit":"bytes","scope":"runtime","method":null,"availability":"unsupported"},
+    {"name":"system_vm","unit":"pages-with-recorded-page-size","scope":"whole-host","method":"vm_stat","availability":"planned"},
+    {"name":"system_swap_used","unit":"bytes","scope":"whole-host","method":"sysctl-vm.swapusage","availability":"planned"}
+  ],
+  "unsupported_sample":{"value":null,"availability":"unsupported","reason":"no-validated-probe"},
+  "aggregation":{"sum_overlapping_metrics":false,"sum_process_rss_as_physical_memory":false,"quantiles":"exploratory-only-at-this-sample-size","report_every_run":true},
+  "safety":{"network":"loopback-only","weights_download":false,"system_tuning":false,"idle_eviction":false,"force_kill_foreign_processes":false,"automatic_provider_change":false,"automatic_memory_pressure_test":false},
+  "stop_conditions":["unconfirmed-runtime-state","unexpected-backend-request","pid-ownership-mismatch","effective-budget-mismatch","tool-or-test-failure","unsupported-required-metric","user-stop"]
+}

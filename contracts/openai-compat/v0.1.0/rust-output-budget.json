@@ -1,0 +1,25 @@
+{
+  "scope": "Rust extension S2-01; not Python v0.1.0 golden behavior",
+  "default_config_cap": 256,
+  "valid": [
+    {"id":"absent", "patch":{}, "effective":256},
+    {"id":"legacy-min", "patch":{"max_tokens":1}, "effective":1},
+    {"id":"legacy-max", "patch":{"max_tokens":4096}, "effective":256},
+    {"id":"alias-min", "patch":{"max_completion_tokens":1}, "effective":1},
+    {"id":"alias-below-cap", "patch":{"max_completion_tokens":64}, "effective":64},
+    {"id":"alias-at-cap", "patch":{"max_completion_tokens":256}, "effective":256},
+    {"id":"alias-max", "patch":{"max_completion_tokens":4096}, "effective":256},
+    {"id":"equal-below-cap", "patch":{"max_tokens":32,"max_completion_tokens":32}, "effective":32},
+    {"id":"equal-above-cap", "patch":{"max_tokens":512,"max_completion_tokens":512}, "effective":256},
+    {"id":"config-min", "config_cap":1, "patch":{"max_completion_tokens":32}, "effective":1},
+    {"id":"config-max", "config_cap":4096, "patch":{"max_completion_tokens":4096}, "effective":4096},
+    {"id":"opencode-2048", "config_cap":2048, "patch":{"max_completion_tokens":2048}, "effective":2048}
+  ],
+  "invalid_values": [null, true, false, 0, -1, 4097, 1.0, 1.5, "32", [], {}, 18446744073709551616],
+  "invalid_pairs": [
+    {"max_tokens":64,"max_completion_tokens":32},
+    {"max_tokens":32,"max_completion_tokens":64},
+    {"max_tokens":512,"max_completion_tokens":1024}
+  ],
+  "conflict_error": "max_tokens and max_completion_tokens must match when both are provided"
+}

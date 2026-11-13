@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "web_port": 8011,
+  "preflight_min_free_mib": 0,
+  "preflight_max_swap_growth_mib": 32,
+  "max_swap_growth_mib": 512,
+  "warning_budget_ms": 0,
+  "max_session_seconds": 1800
+}

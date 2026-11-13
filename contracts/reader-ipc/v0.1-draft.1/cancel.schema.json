@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Seiya reader explicit cancellation",
+  "type": "object", "additionalProperties": false,
+  "required": ["version", "run_id"],
+  "properties": {
+    "version": {"const": "0.1-draft.1"},
+    "run_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9_-]+$"}
+  }
+}

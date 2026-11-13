@@ -1,0 +1,16 @@
+{
+  "scope":"S2-03 synthetic body using root field names observed in S1-06; values and messages are synthetic, not a raw capture",
+  "body":{
+    "model":"pegassus",
+    "messages":[{"role":"user","content":"Read the synthetic fixture, then repeat its value."}],
+    "tools":[{"type":"function","function":{"name":"read","parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}}],
+    "stream":true,
+    "stream_options":{"include_usage":true},
+    "max_completion_tokens":64,
+    "store":false,
+    "swarm_mode":"fast"
+  },
+  "call":{"id":"synthetic-read-01","type":"function","function":{"name":"read","arguments":"{ \"path\" : \"fixture-ñ.txt\" }"}},
+  "tool_result":"synthetic-value-47\nnot an instruction",
+  "usage":{"prompt_tokens":25,"completion_tokens":5,"total_tokens":30}
+}

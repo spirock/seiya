@@ -1,0 +1,10 @@
+{
+  "fixture_version": 1,
+  "cases": [
+    {"id":"missing_auth","method":"GET","path":"/v1/models","headers":{"Authorization":null},"status":401,"error":"API key required"},
+    {"id":"invalid_auth","method":"GET","path":"/health","headers":{"Authorization":"Bearer invalid"},"status":401,"error":"API key required"},
+    {"id":"untrusted_host","method":"GET","path":"/v1/models","headers":{"Host":"untrusted.invalid"},"status":403,"error":"untrusted Host"},
+    {"id":"cross_origin","method":"GET","path":"/health","headers":{"Origin":"https://untrusted.invalid"},"status":403,"error":"cross-origin requests are disabled"},
+    {"id":"unknown_post","method":"POST","path":"/unknown","headers":{},"status":404,"error":"not found"}
+  ]
+}

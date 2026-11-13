@@ -1,0 +1,7 @@
+{
+  "examples":[
+    {"operation":"status"},
+    {"operation":"features","revision":1,"features":{"images":true,"multiagent":true}},
+    {"operation":"configure","revision":1,"limits":{"version":1,"chat_warning_ms":10000,"chat_swap_growth_mib":2048,"chat_deadline_seconds":120,"image_swap_growth_mib":512,"image_deadline_seconds":600,"session_seconds":1800}}
+  ]
+}

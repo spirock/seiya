@@ -1,0 +1,7 @@
+{
+  "python": "/absolute/existing-venv/bin/python3",
+  "runtime_entrypoint": "/absolute/existing-venv/bin/mlx_lm.server",
+  "checkpoint": "/absolute/existing-checkpoint",
+  "coordination_directory": "/absolute/shared-host-coordination",
+  "minimum_free_bytes": 2147483648
+}

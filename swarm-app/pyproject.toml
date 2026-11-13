@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seiya"
+version = "0.1.0"
+description = "Sequential local multi-model coordinator with an OpenAI-compatible API"
+requires-python = ">=3.10"
+
+[project.scripts]
+seiya = "seiya.__main__:main"
+
+[tool.setuptools.package-data]
+seiya = ["ui.html"]

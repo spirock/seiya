@@ -1,0 +1,35 @@
+{
+  "scope":"Rust extension S2-02, not Python golden or real client capture",
+  "valid":[
+    {"patch":{},"sse_usage":true},
+    {"patch":{"store":false},"sse_usage":true},
+    {"patch":{"stream":false,"store":false},"sse_usage":true},
+    {"patch":{"stream":true},"sse_usage":true},
+    {"patch":{"stream":true,"stream_options":{}},"sse_usage":true},
+    {"patch":{"stream":true,"stream_options":{"include_usage":true},"store":false},"sse_usage":true},
+    {"patch":{"stream":true,"stream_options":{"include_usage":false},"store":false},"sse_usage":false}
+  ],
+  "invalid":[
+    {"patch":{"store":true},"error":"store must be false; server-side completion storage is unsupported"},
+    {"patch":{"store":null},"error":"store must be false; server-side completion storage is unsupported"},
+    {"patch":{"store":0},"error":"store must be false; server-side completion storage is unsupported"},
+    {"patch":{"store":"false"},"error":"store must be false; server-side completion storage is unsupported"},
+    {"patch":{"store":{}},"error":"store must be false; server-side completion storage is unsupported"},
+    {"patch":{"store":[]},"error":"store must be false; server-side completion storage is unsupported"},
+    {"patch":{"stream_options":{}},"error":"stream_options requires stream:true"},
+    {"patch":{"stream":false,"stream_options":{"include_usage":true}},"error":"stream_options requires stream:true"},
+    {"patch":{"stream":true,"stream_options":null},"error":"stream_options must be an object"},
+    {"patch":{"stream":true,"stream_options":false},"error":"stream_options must be an object"},
+    {"patch":{"stream":true,"stream_options":[]},"error":"stream_options must be an object"},
+    {"patch":{"stream":true,"stream_options":"usage"},"error":"stream_options must be an object"},
+    {"patch":{"stream":true,"stream_options":{"include_usage":null}},"error":"stream_options.include_usage must be boolean"},
+    {"patch":{"stream":true,"stream_options":{"include_usage":0}},"error":"stream_options.include_usage must be boolean"},
+    {"patch":{"stream":true,"stream_options":{"include_usage":"true"}},"error":"stream_options.include_usage must be boolean"},
+    {"patch":{"stream":true,"stream_options":{"include_usage":{}}},"error":"stream_options.include_usage must be boolean"},
+    {"patch":{"stream":true,"stream_options":{"include_usage":[]}},"error":"stream_options.include_usage must be boolean"},
+    {"patch":{"stream":true,"stream_options":{"include_usage":true,"unexpected-private-key":true}},"error":"stream_options supports only include_usage"}
+  ],
+  "unsupported_fields":["n","stop","seed","top_p","frequency_penalty","presence_penalty","metadata","user","service_tier","unexpected-private-key"],
+  "unsupported_values":[null,false,0,"private-value",{},[]],
+  "unsupported_error":"request contains unsupported fields"
+}

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "target": "macos",
+  "data_dir": "/absolute/canonical/private/seiya-data",
+  "coordination_dir": "/absolute/canonical/private/seiya-coordination",
+  "model_store": "/absolute/canonical/existing/model-store",
+  "llm_binary": "/absolute/canonical/existing/ollama",
+  "images": {
+    "binary": "/absolute/canonical/existing/sd-cli",
+    "assets_dir": "/absolute/canonical/existing/image-assets"
+  },
+  "features": {"images": false, "multiagent": false}
+}

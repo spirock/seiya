@@ -1,0 +1,10 @@
+{
+  "contract_version": "1.0-draft.1",
+  "request_id": "request-001",
+  "conversation_id": "conversation-001",
+  "execution": "auto",
+  "privacy": "local_only",
+  "messages": [
+    {"role": "user", "content": [{"type": "text", "text": "Resume este documento"}]}
+  ]
+}

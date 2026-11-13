@@ -1,0 +1,13 @@
+{
+  "version": "seiya-runtime-memory/1",
+  "pid": 42,
+  "sequence": 0,
+  "read_started_ns": 100,
+  "read_finished_ns": 125,
+  "peak_scope": "runtime_global_external_resets_unknown",
+  "mlx_active_bytes": {"value": 1024, "reason": null},
+  "mlx_cache_bytes": {"value": 0, "reason": null},
+  "mlx_peak_bytes": {"value": 2048, "reason": null},
+  "metal_allocated_bytes": {"value": null, "reason": "no_validated_probe"},
+  "footprint_bytes": {"value": null, "reason": "no_validated_probe"}
+}

@@ -1,0 +1,14 @@
+{
+  "mode": "fast",
+  "worker": "gemma",
+  "timeout_seconds": 120,
+  "max_output_tokens": 256,
+  "models": [{"id": "gemma", "model": "/synthetic/operator-selected-model", "base_url": "http://127.0.0.1:8081/v1", "backend": "mlx"}],
+  "web_reader": {
+    "base_url": "http://127.0.0.1:8012/internal/reader/v0.1",
+    "api_key_env": "SEIYA_READER_KEY",
+    "context_tokens": 4096,
+    "output_tokens": 256,
+    "margin_tokens": 256
+  }
+}

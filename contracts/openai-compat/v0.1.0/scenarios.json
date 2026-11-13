@@ -1,0 +1,143 @@
+{
+  "fixture_version": 1,
+  "reference_version": "0.1.0",
+  "synthetic": true,
+  "config": {
+    "mode": "fast", "worker": "fixture-worker", "timeout_seconds": 5, "max_output_tokens": 256,
+    "models": [{"id":"fixture-worker","model":"fixture-checkpoint","base_url":"http://127.0.0.1:65535/v1","backend":"mlx"}]
+  },
+  "scenarios": [
+    {
+      "id": "discovery_and_health",
+      "steps": [
+        {"method":"GET","path":"/v1/models","status":200,"expected":{"object":"list","data":[{"id":"pegassus","object":"model","owned_by":"seiya"}]}},
+        {"method":"GET","path":"/health","status":200,"expected":{"status":"ok","model":"pegassus","busy":false,"backend_readiness":"not checked","version":"0.1.0"}},
+        {"method":"GET","path":"/not-an-endpoint","status":404,"expected":{"error":{"message":"not found"}}}
+      ]
+    },
+    {
+      "id": "fast_text_defaults",
+      "steps": [{
+        "method":"POST","path":"/v1/chat/completions",
+        "body":{"model":"pegassus","swarm_mode":"fast","messages":[{"role":"system","content":"Answer briefly."},{"role":"user","content":"Hola, ¿cuánto es 2+2?"}]},
+        "runtime_response":{"choices":[{"message":{"role":"assistant","content":"4"},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":1,"total_tokens":13}},
+        "status":200,
+        "expected":{"id":"<completion-id>","object":"chat.completion","created":"<unix-seconds>","model":"pegassus","choices":[{"index":0,"message":{"role":"assistant","content":"4"},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":1,"total_tokens":13},"swarm":{"mode":"fast","selected_model":"fixture-worker","elapsed_seconds":"<elapsed-seconds>"}}
+      }]
+    },
+    {
+      "id": "explicit_sampling_and_output_ceiling",
+      "steps": [{
+        "method":"POST","path":"/v1/chat/completions",
+        "body":{"swarm_mode":"fast","max_tokens":4096,"temperature":0.5,"messages":[{"role":"user","content":"A short answer."}]},
+        "runtime_request":{"temperature":0.5,"max_tokens":256},
+        "runtime_response":{"choices":[{"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}]},
+        "status":200,
+        "expected":{"id":"<completion-id>","object":"chat.completion","created":"<unix-seconds>","model":"pegassus","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0},"swarm":{"mode":"fast","selected_model":"fixture-worker","elapsed_seconds":"<elapsed-seconds>"}}
+      }]
+    },
+    {
+      "id": "structured_tool_roundtrip",
+      "steps": [
+        {
+          "method":"POST","path":"/v1/chat/completions",
+          "body":{"model":"pegassus","swarm_mode":"fast","max_tokens":64,"messages":[{"role":"user","content":"Read fixture.txt."}],"tools":[{"type":"function","function":{"name":"read_file","description":"Read a synthetic file in the test client.","parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}}}]},
+          "runtime_request":{"max_tokens":64},
+          "runtime_response":{"choices":[{"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call-read-01","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"fixture.txt\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":20,"completion_tokens":10,"total_tokens":30}},
+          "status":200,
+          "expected":{"id":"<completion-id>","object":"chat.completion","created":"<unix-seconds>","model":"pegassus","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call-read-01","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"fixture.txt\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":20,"completion_tokens":10,"total_tokens":30},"swarm":{"mode":"tools","selected_model":"fixture-worker","elapsed_seconds":"<elapsed-seconds>"}}
+        },
+        {
+          "method":"POST","path":"/v1/chat/completions",
+          "body":{"model":"pegassus","swarm_mode":"fast","messages":[{"role":"user","content":"Read fixture.txt."},{"role":"assistant","content":null,"tool_calls":[{"id":"call-read-01","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"fixture.txt\"}"}}]},{"role":"tool","tool_call_id":"call-read-01","content":"synthetic-content-47"}]},
+          "runtime_response":{"choices":[{"message":{"role":"assistant","content":"synthetic-content-47"},"finish_reason":"stop"}],"usage":{"prompt_tokens":35,"completion_tokens":5,"total_tokens":40}},
+          "status":200,
+          "expected":{"id":"<completion-id>","object":"chat.completion","created":"<unix-seconds>","model":"pegassus","choices":[{"index":0,"message":{"role":"assistant","content":"synthetic-content-47"},"finish_reason":"stop"}],"usage":{"prompt_tokens":35,"completion_tokens":5,"total_tokens":40},"swarm":{"mode":"tools","selected_model":"fixture-worker","elapsed_seconds":"<elapsed-seconds>"}}
+        }
+      ]
+    },
+    {
+      "id": "buffered_text_sse",
+      "steps": [{
+        "method":"POST","path":"/v1/chat/completions",
+        "body":{"model":"pegassus","swarm_mode":"fast","stream":true,"messages":[{"role":"user","content":"Say hola."}]},
+        "runtime_response":{"choices":[{"message":{"role":"assistant","content":"Hola"},"finish_reason":"stop"}],"usage":{"prompt_tokens":7,"completion_tokens":1,"total_tokens":8}},
+        "status":200,
+        "expected_sse":[
+          {"id":"<completion-id>","created":"<unix-seconds>","model":"pegassus","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":"Hola"},"finish_reason":null}]},
+          {"id":"<completion-id>","created":"<unix-seconds>","model":"pegassus","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":7,"completion_tokens":1,"total_tokens":8},"swarm":{"mode":"fast","selected_model":"fixture-worker","elapsed_seconds":"<elapsed-seconds>"}},
+          "[DONE]"
+        ]
+      }]
+    },
+    {
+      "id": "buffered_tool_sse",
+      "steps": [{
+        "method":"POST","path":"/v1/chat/completions",
+        "body":{"model":"pegassus","swarm_mode":"fast","stream":true,"messages":[{"role":"user","content":"Read fixture.txt."}],"tools":[{"type":"function","function":{"name":"read_file","parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}}]},
+        "runtime_response":{"choices":[{"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call-stream-01","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"fixture.txt\"}"}}]},"finish_reason":"tool_calls"}],"usage":null},
+        "status":200,
+        "expected_sse":[
+          {"id":"<completion-id>","created":"<unix-seconds>","model":"pegassus","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"id":"call-stream-01","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"fixture.txt\"}"},"index":0}]},"finish_reason":null}]},
+          {"id":"<completion-id>","created":"<unix-seconds>","model":"pegassus","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0},"swarm":{"mode":"tools","selected_model":"fixture-worker","elapsed_seconds":"<elapsed-seconds>"}},
+          "[DONE]"
+        ]
+      }]
+    },
+    {
+      "id": "truncated_backend_response",
+      "steps": [{
+        "method":"POST","path":"/v1/chat/completions",
+        "body":{"swarm_mode":"fast","stream":true,"messages":[{"role":"user","content":"Answer."}]},
+        "runtime_response":{"choices":[{"message":{"role":"assistant","content":"partial"},"finish_reason":"length"}]},
+        "status":502,"expected":{"error":{"message":"fixture-worker: output truncated; increase output budget"}}
+      }]
+    },
+    {
+      "id": "malformed_backend_response",
+      "steps": [{
+        "method":"POST","path":"/v1/chat/completions",
+        "body":{"swarm_mode":"fast","messages":[{"role":"user","content":"Answer."}]},
+        "runtime_response":{"choices":[]},
+        "status":502,"expected":{"error":{"message":"fixture-worker: malformed model response"}}
+      }]
+    },
+    {
+      "id": "invalid_usage_object",
+      "steps": [{
+        "method":"POST","path":"/v1/chat/completions",
+        "body":{"swarm_mode":"fast","messages":[{"role":"user","content":"Answer."}]},
+        "runtime_response":{"choices":[{"message":{"role":"assistant","content":"OK"}}],"usage":[1]},
+        "status":502,"expected":{"error":{"message":"invalid token usage object"}}
+      }]
+    },
+    {
+      "id": "backend_transport_failure",
+      "steps": [{
+        "method":"POST","path":"/v1/chat/completions",
+        "body":{"swarm_mode":"fast","messages":[{"role":"user","content":"Answer."}]},
+        "runtime_error":"local model endpoint failed: TimeoutError",
+        "status":502,"expected":{"error":{"message":"local model endpoint failed: TimeoutError"}}
+      }]
+    },
+    {
+      "id": "json_prose_is_not_a_tool_call",
+      "steps": [{
+        "method":"POST","path":"/v1/chat/completions",
+        "body":{"swarm_mode":"fast","messages":[{"role":"user","content":"Read fixture.txt."}],"tools":[{"type":"function","function":{"name":"read","parameters":{"type":"object"}}}]},
+        "runtime_response":{"choices":[{"message":{"role":"assistant","content":"```json\n{\"name\":\"read\",\"arguments\":{\"path\":\"fixture.txt\"}}\n```"},"finish_reason":"stop"}]},
+        "status":200,
+        "expected":{"id":"<completion-id>","object":"chat.completion","created":"<unix-seconds>","model":"pegassus","choices":[{"index":0,"message":{"role":"assistant","content":"```json\n{\"name\":\"read\",\"arguments\":{\"path\":\"fixture.txt\"}}\n```"},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0},"swarm":{"mode":"tools","selected_model":"fixture-worker","elapsed_seconds":"<elapsed-seconds>"}}
+      }]
+    },
+    {
+      "id": "unadvertised_tool_rejected",
+      "steps": [{
+        "method":"POST","path":"/v1/chat/completions",
+        "body":{"swarm_mode":"fast","messages":[{"role":"user","content":"Answer."}]},
+        "runtime_response":{"choices":[{"message":{"role":"assistant","content":null,"tool_calls":[{"id":"bad-01","type":"function","function":{"name":"not_offered","arguments":"{}"}}]}}]},
+        "status":502,"expected":{"error":{"message":"invalid structured tool call; nothing executed"}}
+      }]
+    }
+  ]
+}

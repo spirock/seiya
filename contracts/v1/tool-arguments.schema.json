@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Proposed Seiya tool arguments; validating this schema does not grant permissions",
+  "$comment": "Use the named $defs entry selected by a trusted tool registry. Resource IDs, paths, URLs, freshness and permissions require host validation. No tools are executed by this schema.",
+  "$defs": {
+    "id": {"type":"string","minLength":1,"maxLength":128,"pattern":"\\S"},
+    "sha256": {"type":"string","pattern":"^[a-f0-9]{64}$"},
+    "web_search": {
+      "type":"object","additionalProperties":false,"required":["query"],
+      "properties":{"query":{"type":"string","minLength":1,"maxLength":300},"limit":{"type":"integer","minimum":1,"maximum":5}}
+    },
+    "web_fetch": {
+      "type":"object","additionalProperties":false,"required":["url"],
+      "properties":{"url":{"type":"string","format":"uri","maxLength":2048},"max_bytes":{"type":"integer","minimum":1,"maximum":1048576}}
+    },
+    "files_list": {
+      "type":"object","additionalProperties":false,"required":["directory_id"],
+      "properties":{"directory_id":{"$ref":"#/$defs/id"},"cursor":{"$ref":"#/$defs/id"},"limit":{"type":"integer","minimum":1,"maximum":100}}
+    },
+    "files_read": {
+      "type":"object","additionalProperties":false,"required":["file_id"],
+      "properties":{"file_id":{"$ref":"#/$defs/id"},"offset_bytes":{"type":"integer","minimum":0},"max_bytes":{"type":"integer","minimum":1,"maximum":65536}}
+    },
+    "files_write": {
+      "type":"object","additionalProperties":false,"required":["file_id","expected_sha256","content"],
+      "properties":{"file_id":{"$ref":"#/$defs/id"},"expected_sha256":{"$ref":"#/$defs/sha256"},"content":{"type":"string","maxLength":32768}}
+    },
+    "apps_open": {
+      "type":"object","additionalProperties":false,"required":["bundle_id"],
+      "properties":{"bundle_id":{"type":"string","minLength":1,"maxLength":255,"pattern":"^[A-Za-z0-9.-]+$"}}
+    },
+    "mail_list_messages": {
+      "type":"object","additionalProperties":false,"required":["account_id","mailbox_id"],
+      "properties":{"account_id":{"$ref":"#/$defs/id"},"mailbox_id":{"$ref":"#/$defs/id"},"limit":{"type":"integer","minimum":1,"maximum":20},"sort":{"const":"received_desc"}}
+    },
+    "mail_read_message": {
+      "type":"object","additionalProperties":false,"required":["account_id","message_id"],
+      "properties":{"account_id":{"$ref":"#/$defs/id"},"message_id":{"$ref":"#/$defs/id"},"max_chars":{"type":"integer","minimum":1,"maximum":32768}}
+    },
+    "mail_send_message": {
+      "type":"object","additionalProperties":false,"required":["draft_id","expected_sha256"],
+      "properties":{"draft_id":{"$ref":"#/$defs/id"},"expected_sha256":{"$ref":"#/$defs/sha256"}}
+    },
+    "screen_capture": {
+      "type":"object","additionalProperties":false,"required":["window_id"],
+      "properties":{"window_id":{"$ref":"#/$defs/id"},"max_dimension":{"type":"integer","minimum":128,"maximum":2048}}
+    },
+    "ui_inspect": {
+      "type":"object","additionalProperties":false,"required":["window_id"],
+      "properties":{"window_id":{"$ref":"#/$defs/id"},"limit":{"type":"integer","minimum":1,"maximum":100}}
+    },
+    "ui_action": {
+      "type":"object","additionalProperties":false,"required":["snapshot_id","target_id","action"],
+      "properties":{"snapshot_id":{"$ref":"#/$defs/id"},"target_id":{"$ref":"#/$defs/id"},"action":{"enum":["click","focus","set_text"]},"text":{"type":"string","maxLength":4096}},
+      "allOf":[{"if":{"properties":{"action":{"const":"set_text"}}},"then":{"required":["text"]},"else":{"not":{"required":["text"]}}}]
+    },
+    "shell_run": {
+      "type":"object","additionalProperties":false,"required":["workspace_id","executable","arguments"],
+      "properties":{"workspace_id":{"$ref":"#/$defs/id"},"executable":{"type":"string","minLength":1,"maxLength":1024},"arguments":{"type":"array","maxItems":64,"items":{"type":"string","maxLength":4096}},"timeout_seconds":{"type":"integer","minimum":1,"maximum":120}}
+    }
+  }
+}

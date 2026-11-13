@@ -1,0 +1,7 @@
+{
+  "notice":"Library-only supplemental stop-only pressure guard. Not load authorization, owned-runtime cleanup or a live memory probe.",
+  "runtime_status_version":2,
+  "awaiting":{"http_status":503,"body":{"error":{"code":"memory_observation_unavailable","message":"memory observation is unavailable; no request dispatched"}}},
+  "stopped":{"http_status":503,"body":{"error":{"code":"runtime_memory_blocked","message":"runtime admission stopped by memory observation policy; operator recovery required"}}},
+  "initial":{"version":1,"scope":"stop_only_pressure","state":"awaiting_observation","stop":null,"sampled_at_millis":null,"preflight":"external_required"}
+}

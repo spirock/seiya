@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "mode": "owned-synthetic-preview-http",
+  "date": "2026-11-11",
+  "endpoint": "http://127.0.0.1:8010",
+  "real_local_http": true,
+  "model_inference": false,
+  "orchestrator_and_auxiliary_simulated": true,
+  "submit_response_millis": 4.118,
+  "chat_response_while_job_pending_millis": 2.668,
+  "idempotent_submit_verified": true,
+  "host_formatted_status_verified": true,
+  "cancelled_state_verified": true,
+  "artifact_retrieved": true,
+  "artifact_sha256": "6c03d257c2b474fa271d2623f27d459f113bed792f32d8bc25a108d55d4bdcc2",
+  "frontend_auth_and_host_verified": true,
+  "v1_bypass_rejected": true,
+  "workspace_written": false,
+  "tests_executed_by_job": false,
+  "real_model_pair_validated": false,
+  "safari_visual_validated": false
+}

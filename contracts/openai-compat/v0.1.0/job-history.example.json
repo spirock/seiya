@@ -1,0 +1,7 @@
+{
+  "note": "Authenticated single-owner browser controls; not model tools or OpenAI chat requests",
+  "commands": [
+    {"operation":"open","conversation_id":"12345678-1234-4234-8234-123456789abc"},
+    {"operation":"forget","session":"0000000000000000000000000000000000000000000000000000000000000000"}
+  ]
+}

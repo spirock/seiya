@@ -1,0 +1,5 @@
+{
+  "notice":"Version2 supervisor snapshots: native macOS flock fixture, but runtime/pressure/reaping are injected. Not a model campaign or native Child cleanup proof.",
+  "quarantined":{"version":2,"mode":"injected-supervisor","model_inference":false,"stage":"quarantined","cause":{"memory":"pressure_not_normal"},"cleanup_failure":"invalid_proof","attempts":1,"owned_members":1,"runtime_reaped":false,"lease_release_confirmed":false,"lease_origin":"native_coordination_lock"},
+  "stopped":{"version":2,"mode":"injected-supervisor","model_inference":false,"stage":"stopped","cause":{"memory":"pressure_not_normal"},"cleanup_failure":null,"attempts":2,"owned_members":1,"runtime_reaped":true,"lease_release_confirmed":true,"lease_origin":"native_coordination_lock"}
+}
