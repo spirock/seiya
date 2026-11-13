@@ -5,9 +5,9 @@ firma. **No es todavía la aplicación web completa ni tiene inferencia/modelos
 Windows validados.** No hay MLX/Metal, imágenes nativas, host --serve macOS ni
 paridad desktop por compilar un .exe. No incluye Python, pesos o motores externos.
 
-Build confirmado: [Actions43493781845](https://github.com/spirock/seiya/actions/runs/43493781845),
-commit25909af. [ZIP portable](https://github.com/spirock/seiya/actions/runs/43493781845/artifacts/14071671182)
-y [setup.exe](https://github.com/spirock/seiya/actions/runs/43493781845/artifacts/14070927475).
+Descargas actuales: [bloque actualizado automáticamente en README](https://github.com/spirock/seiya#descargas).
+Build confirmado: [Actions43507170152](https://github.com/spirock/seiya/actions/runs/43507170152),
+commit1d49370. ZIP portable y setup.exe se verifican en ese run.
 GitHub entrega cada artefacto envuelto en ZIP: descomprimir antes de usarlo.
 Windows/MSVC, auditoría DLL y ayuda/config del ZIP pasaron; instalación no probada.
 

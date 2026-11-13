@@ -61,6 +61,7 @@ separados de la publicación de artefactos.
 
 | Código / run | Resultado y alcance |
 |---|---|
+| `1d49370` / [43507170152](https://github.com/spirock/seiya/actions/runs/43507170152) | Snapshot raíz limpio: contratos, Windows, macOS y Linux correctos. Job downloads actualizó README automáticamente (commit bot `2b6fd49`); enlaces/figuras/tablas comprobados. No instalación o GUI real. |
 | `b525f83` / [43487352926](https://github.com/spirock/seiya/actions/runs/43487352926) | Rust Linux/macOS: builds, extracción/allowlist/hashes y ayuda/versiones correctos; sin instalar. |
 | `25909af` / [43493781845](https://github.com/spirock/seiya/actions/runs/43493781845) | Windows/Linux/macOS y contratos correctos; Node24 sin avisos Node20. Setup compilado con InnoSetup preinstalado, ZIP extraído, CLI/config y DLL auditadas; no instalación. |
 | `15cc2f2` / [43502315485](https://github.com/spirock/seiya/actions/runs/43502315485) | Contratos, Windows y Linux correctos. macOS cancelado antes de ejecutar pasos (runner_id0, sin runner asignado); downloads omitido. No acredita fallo de código macOS ni nuevo conjunto completo de descargas. |
