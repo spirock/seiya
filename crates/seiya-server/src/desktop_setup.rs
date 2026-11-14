@@ -161,9 +161,10 @@ async fn page() -> Html<String> {
     let source = include_str!("../../../swarm-app/seiya/ui.html");
     let shell = source.split("<script>").next().unwrap();
     Html(format!(
-        "{shell}{}<script>{}</script></html>",
+        "{shell}{}<script>{}\n{}</script></html>",
         include_str!("desktop_setup.html"),
-        include_str!("desktop_setup.js")
+        include_str!("desktop_setup.js"),
+        include_str!("desktop_setup_feedback.js")
     ))
 }
 async fn status(State(s): State<Arc<Setup>>) -> Json<Value> {

@@ -42,13 +42,19 @@ servicios. La selección de capacidades depende de la plataforma y del build.
 
 ## Enlaces de descarga en README
 
-El job `downloads` genera solo el bloque delimitado del README después de
+El snapshot actual mantiene README.md principal en inglés y readmees.md en
+español con enlaces recíprocos. Downloads valida artefactos del mismo SHA/run
+antes de escribir ambos bloques. Se requiere DMG macOS y PKG opcional separado;
+el DMG contiene la app y el enlace Applications, no un instalador anidado.
+El bot añade solo los dos documentos, sin planes/instrucciones/ignore privados.
+
+El job `downloads` genera solo los bloques delimitados de README.md/readmees.md después de
 contracts/build/windows correctos en `main`, nunca desde PR. Los IDs deben ser
 no expirados y corresponder al mismo run/SHA, con los nombres de artefactos
 esperados. Un build incompleto conserva los últimos enlaces verificados.
 
 El job tiene permisos de escritura solo para la operación de documentación,
-añade únicamente README y comprueba que HEAD siga siendo el SHA compilado. No
+añade únicamente ambos README y comprueba que HEAD siga siendo el SHA compilado. No
 usa force-push. El commit bot lleva `[skip ci]`; no modifica modelos, roles,
 matriz de capacidades, gráficos o documentación fuera del bloque.
 

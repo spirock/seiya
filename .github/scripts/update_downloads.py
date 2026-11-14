@@ -7,10 +7,18 @@ from pathlib import Path
 START = '<!-- seiya-downloads:start -->'
 END = '<!-- seiya-downloads:end -->'
 REQUIRED = ('seiya-rust-Windows-X64-installer', 'seiya-rust-Windows-X64-portable',
-            'seiya-rust-packages-macOS-ARM64', 'seiya-rust-packages-Linux-X64')
+            'seiya-rust-packages-macOS-ARM64', 'seiya-rust-packages-Linux-X64',
+            'seiya-rust-pkg-macOS-ARM64')
 
 
-def updated(readme, metadata, repository, run_id, sha):
+def updated(readme, metadata, repository, run_id, sha, language='es'):
+    labels = {
+        'es': ('Último build verificado', 'Sistema', 'Descarga', 'Instalador .exe', 'ZIP portable', 'DMG · arrastrar a Aplicaciones', 'PKG opcional'),
+        'en': ('Latest verified build', 'Platform', 'Download', '.exe installer', 'Portable ZIP', 'DMG · drag to Applications', 'Optional PKG'),
+    }
+    if language not in labels:
+        raise ValueError('unsupported README language')
+    verified, platform, download, exe, portable, dmg, pkg = labels[language]
     if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository) or not re.fullmatch(r'[0-9a-f]{40}', sha):
         raise ValueError('invalid repository/revision')
     if type(run_id) is not int or run_id <= 0:
@@ -32,12 +40,12 @@ def updated(readme, metadata, repository, run_id, sha):
     if readme.count(START) != 1 or readme.count(END) != 1 or readme.index(START) >= readme.index(END):
         raise ValueError('ambiguous README markers')
     block = f'''{START}
-**Último build verificado:** [`{sha[:7]}`]({base}).
+**{verified}:** [`{sha[:7]}`]({base}).
 
-| Sistema | Descarga |
+| {platform} | {download} |
 |---|---|
-| Windows x64 | [Instalador .exe]({links[REQUIRED[0]]}) · [ZIP portable]({links[REQUIRED[1]]}) |
-| macOS Apple Silicon | [.dmg / .pkg]({links[REQUIRED[2]]}) |
+| Windows x64 | [{exe}]({links[REQUIRED[0]]}) · [{portable}]({links[REQUIRED[1]]}) |
+| macOS Apple Silicon | [{dmg}]({links[REQUIRED[2]]}) · [{pkg}]({links[REQUIRED[4]]}) |
 | Linux x64 | [.deb]({links[REQUIRED[3]]}) |
 {END}'''
     return readme[:readme.index(START)] + block + readme[readme.index(END) + len(END):]
@@ -46,6 +54,8 @@ def updated(readme, metadata, repository, run_id, sha):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--readme', type=Path, required=True)
+    parser.add_argument('--language', choices=('en','es'), default='es')
+    parser.add_argument('--readme-es', type=Path)
     parser.add_argument('--artifacts', type=Path, required=True)
     parser.add_argument('--repository', required=True)
     parser.add_argument('--run-id', type=int, required=True)
@@ -53,10 +63,16 @@ def main():
     args = parser.parse_args()
     if args.artifacts.stat().st_size > 4 * 1024 * 1024:
         parser.error('artifact metadata exceeds bound')
-    original = args.readme.read_text(encoding='utf-8')
-    text = updated(original, json.loads(args.artifacts.read_text(encoding='utf-8')), args.repository, args.run_id, args.sha)
-    if text != original:
-        args.readme.write_text(text, encoding='utf-8')
+    if args.readme_es and args.readme_es.resolve()==args.readme.resolve():
+        parser.error('language documents must be distinct')
+    metadata=json.loads(args.artifacts.read_text(encoding='utf-8'))
+    changes=[]
+    for path,language in [(args.readme,args.language)]+([(args.readme_es,'es')] if args.readme_es else []):
+        original=path.read_text(encoding='utf-8')
+        changes.append((path,original,updated(original,metadata,args.repository,args.run_id,args.sha,language)))
+    # Validate both before writing; a rejected document never partially updates links.
+    for path,original,text in changes:
+        if text!=original:path.write_text(text,encoding='utf-8')
 
 
 if __name__ == '__main__':

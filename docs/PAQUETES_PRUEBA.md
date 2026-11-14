@@ -40,10 +40,14 @@ Run43487352926 confirmó paquetes Rust Linux/macOS para b525f83; no incluía Win
   No depende de Python; requiere GNU libc/libgcc compatibles y runtime externo
   para inferencia. Linux **no soporta** el host --serve macOS, MLX/Metal o imagen
   nativa por instalar este paquete. Entrada de escritorio muestra ayuda CLI.
-- macOS: `Seiya-Rust-0.1.0-ARCH.pkg` y `.dmg` con el mismo .pkg/nota/hashes.
-  Instala `Seiya Rust.app`, `seiya-rust` y `seiya-rust-server`. macOS13+,
+- macOS: `Seiya-Rust-0.1.0-ARCH.pkg` opcional y `.dmg` de arrastrar la app.
+  El PKG instala `Seiya Rust.app`, `seiya-rust` y `seiya-rust-server`; el DMG
+  permite copiar solo la app autocontenida. macOS13+,
   arquitectura concreta (amd64=Intel, arm64=Apple Silicon), no universal.
-  El DMG es un contenedor, no un motor ni un ejecutable independiente.
+  El nuevo DMG contiene Seiya Rust.app para arrastrar a Aplicaciones y el acceso
+  Applications. El PKG separado opcional instala también los wrappers de terminal.
+  No usar ambos formatos ni mover el archivo DMG a Aplicaciones. Los builds
+  anteriores contienen PKG/README/hashes dentro del DMG: comprobar el commit.
 - `.app` nueva abre launcher nativo **Configurar/Abrir perfil**, revisión y
   confirmación antes de iniciar la web solo en este Mac. Sin comandos/TLS para
   loopback; LAN/TLS conserva entrada manual. No modelos, descargas o prompts

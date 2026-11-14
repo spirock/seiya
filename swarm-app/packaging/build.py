@@ -320,6 +320,36 @@ def dmg(output, package, volume=None):
                        check=True)
 
 
+def rust_dmg(output, binaries, arch, revision=None):
+    """Finder-style app distribution. PKG/CLI wrappers are separate outputs."""
+    if not shutil.which('hdiutil'):
+        raise SystemExit('Build disk images on macOS with hdiutil installed.')
+    with tempfile.TemporaryDirectory(prefix='seiya-app-dmg-') as tmp:
+        staged = Path(tmp) / 'payload'
+        rust_stage(staged, binaries, True, arch, revision=revision)
+        root = Path(tmp) / 'Seiya'
+        root.mkdir()
+        shutil.copytree(staged / 'Applications/Seiya Rust.app', root / 'Seiya Rust.app')
+        (root / 'Applications').symlink_to('/Applications', target_is_directory=True)
+        (root / 'README.md').write_text(
+            'Seiya Rust · macOS\n\n'
+            'Drag Seiya Rust.app to Applications. Do not drag the DMG file.\n'
+            'Arrastra Seiya Rust.app a Aplicaciones; no el archivo DMG.\n\n'
+            'Open the app from Applications, then review its web setup.\n'
+            'No models or engines are included or downloaded automatically.\n'
+            'This app is unsigned/not notarized. Do not disable system protections.\n'
+            'The optional separate PKG also installs command-line wrappers.\n'
+            'See the app Resources/PRUEBA_INSTALADOR.md for limits and feedback.\n', encoding='utf-8')
+        manifest = ''.join(
+            f'{hashlib.sha256(file.read_bytes()).hexdigest()}  {file.relative_to(root).as_posix()}\n'
+            for file in sorted(root.rglob('*')) if file.is_file() and not file.is_symlink())
+        (root / 'SHA256SUMS').write_text(manifest, encoding='utf-8')
+        subprocess.run(['/usr/bin/xattr', '-cr', str(root / 'Seiya Rust.app')], check=True)
+        subprocess.run(['hdiutil', 'create', '-volname', f'Seiya-Rust-{VERSION}-{arch}',
+                        '-srcfolder', str(root), '-format', 'UDZO', '-ov', str(output)], check=True,
+                       env={**os.environ, 'COPYFILE_DISABLE': '1'})
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('target', choices=['deb', 'mac', 'dmg', 'all'])
@@ -344,7 +374,7 @@ def main():
         built.append(output)
         if args.target == 'dmg':
             image = args.output.resolve() / f'Seiya-Rust-{VERSION}-{args.arch}.dmg'
-            dmg(image, output, f'Seiya-Rust-{VERSION}-{args.arch}')
+            rust_dmg(image, args.bin_dir, args.arch, args.revision)
             built.append(image)
     else:
         built = legacy_packages(args)

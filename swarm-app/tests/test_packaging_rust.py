@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import shutil
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -50,6 +51,30 @@ def members(deb):
 
 
 class RustPackagingTests(unittest.TestCase):
+    def test_rust_dmg_contains_app_and_applications_link_not_nested_installer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);source=binaries(root/'bin',mac=True,arch='arm64');output=root/'test.dmg'
+            def command(argv,**kwargs):
+                if argv[0]=='/usr/bin/xattr':return
+                self.assertEqual(argv[:2],['hdiutil','create'])
+                folder=Path(argv[argv.index('-srcfolder')+1])
+                self.assertEqual({p.name for p in folder.iterdir()},{'Seiya Rust.app','Applications','README.md','SHA256SUMS'})
+                self.assertTrue((folder/'Applications').is_symlink());self.assertEqual((folder/'Applications').readlink(),Path('/Applications'))
+                self.assertEqual((folder/'Seiya Rust.app/Contents/MacOS/seiya-desktop').read_bytes(),(source/'seiya-desktop').read_bytes())
+                self.assertFalse(any(p.suffix=='.pkg' for p in folder.rglob('*')))
+                for line in (folder/'SHA256SUMS').read_text().splitlines():
+                    digest,name=line.split('  ',1);self.assertFalse((folder/name).is_symlink());self.assertEqual(hashlib.sha256((folder/name).read_bytes()).hexdigest(),digest)
+                self.assertIn('Drag Seiya Rust.app',(folder/'README.md').read_text())
+                shutil.copytree(folder,root/'mounted-fixture',symlinks=True)
+                output.write_bytes(b'synthetic dmg')
+            with mock.patch.object(build.shutil,'which',return_value='/usr/bin/hdiutil'),mock.patch.object(build.subprocess,'run',side_effect=command):
+                build.rust_dmg(output,source,'arm64',revision='b'*40)
+            self.assertTrue(output.is_file())
+            inspected=subprocess.run([sys.executable,str(SCRIPT.parent/'inspect_dmg.py'),str(root/'mounted-fixture'),'--arch','arm64','--revision','b'*40],capture_output=True,text=True)
+            self.assertEqual(inspected.returncode,0,inspected.stderr)
+            (root/'mounted-fixture/foreign.pkg').write_bytes(b'not allowed')
+            inspected=subprocess.run([sys.executable,str(SCRIPT.parent/'inspect_dmg.py'),str(root/'mounted-fixture'),'--arch','arm64'],capture_output=True,text=True)
+            self.assertNotEqual(inspected.returncode,0)
     def test_debian_arch_payload_hashes_no_python_or_install_hooks(self):
         for arch in ('amd64', 'arm64'):
             with self.subTest(arch=arch), tempfile.TemporaryDirectory() as tmp:

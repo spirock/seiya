@@ -118,10 +118,28 @@ jobs:
           "$RUNNER_TEMP/seiya-rust-expanded/Payload/Applications/Seiya Rust.app/Contents/MacOS/seiya-desktop" --help
           "$RUNNER_TEMP/seiya-rust-expanded/Payload/Applications/Seiya Rust.app/Contents/MacOS/seiya-desktop" --version
           hdiutil verify dist/rust/Seiya-Rust-*.dmg
+          DMG_MOUNT="$RUNNER_TEMP/seiya-dmg-inspection"
+          mkdir -p "$DMG_MOUNT"
+          hdiutil attach dist/rust/Seiya-Rust-*.dmg -readonly -nobrowse -noautoopen -mountpoint "$DMG_MOUNT"
+          trap 'hdiutil detach "$DMG_MOUNT"' EXIT
+          python packaging/inspect_dmg.py "$DMG_MOUNT" --arch "$SEIYA_PACKAGE_ARCH" --revision "$GITHUB_SHA"
+          hdiutil detach "$DMG_MOUNT"
+          trap - EXIT
+          mkdir -p dist/macos-dmg dist/macos-pkg
+          cp dist/rust/*.dmg dist/macos-dmg/
+          cp dist/rust/*.pkg dist/macos-pkg/
+          (cd dist/macos-dmg && shasum -a 256 *.dmg > SHA256SUMS)
+          (cd dist/macos-pkg && shasum -a 256 *.pkg > SHA256SUMS)
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: seiya-rust-packages-${{ runner.os }}-${{ runner.arch }}
-          path: swarm-app/dist/rust/
+          path: ${{ runner.os == 'macOS' && 'swarm-app/dist/macos-dmg/' || 'swarm-app/dist/rust/' }}
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7.0.2
+        if: runner.os == 'macOS'
+        with:
+          name: seiya-rust-pkg-${{ runner.os }}-${{ runner.arch }}
+          path: swarm-app/dist/macos-pkg/
           if-no-files-found: error
       - uses: actions/upload-artifact@v7.0.2
         with:
@@ -229,11 +247,11 @@ jobs:
             exit 0
           fi
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" > "$RUNNER_TEMP/seiya-artifacts.json"
-          python .github/scripts/update_downloads.py --readme README.md --artifacts "$RUNNER_TEMP/seiya-artifacts.json" --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --sha "$GITHUB_SHA"
+          python .github/scripts/update_downloads.py --readme README.md --language en --readme-es readmees.md --artifacts "$RUNNER_TEMP/seiya-artifacts.json" --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --sha "$GITHUB_SHA"
           git diff --check
-          if git diff --quiet -- README.md; then exit 0; fi
+          if git diff --quiet -- README.md readmees.md; then exit 0; fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- README.md
+          git add -- README.md readmees.md
           git commit -m 'Update verified installer download links [skip ci]'
           git push origin HEAD:main

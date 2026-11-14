@@ -2,6 +2,10 @@
 import copy
 import importlib.util
 import re
+import json
+import subprocess
+import sys
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -19,7 +23,7 @@ def metadata():
 
 class ReadmeDownloadsTests(unittest.TestCase):
     def test_opencode_row_distinguishes_partial_api_from_launcher_and_real_platform_tests(self):
-        readme = (ROOT / 'README.md').read_text(encoding='utf-8')
+        readme = (ROOT / 'readmees.md').read_text(encoding='utf-8')
         self.assertIn('| Integración con OpenCode mediante API compatible parcial |', readme)
         self.assertIn('🧪 ensayos aislados anteriores | 🧪 contratos/mocks | 🧪 contratos/mocks |', readme)
         self.assertIn('No es un plugin incluido ni una configuración automática de OpenCode', readme)
@@ -69,7 +73,7 @@ class ReadmeDownloadsTests(unittest.TestCase):
         self.assertNotIn('pull_request_target:', workflow)
 
     def test_model_roles_match_native_tags_and_are_outside_generated_download_block(self):
-        readme = (ROOT / 'README.md').read_text(encoding='utf-8')
+        readme = (ROOT / 'readmees.md').read_text(encoding='utf-8')
         code = (ROOT / 'crates/seiya-server/src/prepared_web.rs').read_text()
         for tag in ('gemma4:e2b-mlx', 'qwen3.5:9b-mlx'):
             self.assertIn(tag, code)
@@ -77,12 +81,28 @@ class ReadmeDownloadsTests(unittest.TestCase):
         result = downloads.updated(readme, metadata(), 'spirock/seiya', 123, 'a' * 40)
         for label in ('## Funciones por sistema operativo', '## Modelos y asignaciones', 'Qwen-Image-2.1-Turbo', 'Qwen3-VL-8B-Instruct', 'VAE Qwen-Image-2.1'):
             self.assertIn(label, result)
+        english=(ROOT/'README.md').read_text(encoding='utf-8')
+        self.assertIn('[Español](readmees.md)',english)
+        self.assertIn('[English](README.md)',readme)
+        for label in ('gemma4:e2b-mlx','qwen3.5:9b-mlx','## Platform status','## Models and compatibility'):
+            self.assertIn(label,downloads.updated(english,metadata(),'spirock/seiya',123,'a'*40,'en'))
+
+    def test_both_languages_use_same_artifacts_and_validate_before_writing(self):
+        english=downloads.updated('English\n'+downloads.START+downloads.END,metadata(),'spirock/seiya',123,'a'*40,'en')
+        spanish=downloads.updated('Español\n'+downloads.START+downloads.END,metadata(),'spirock/seiya',123,'a'*40,'es')
+        self.assertEqual(re.findall(r'https://[^)]+',english),re.findall(r'https://[^)]+',spanish))
+        self.assertIn('Optional PKG',english);self.assertIn('PKG opcional',spanish)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);en=root/'README.md';es=root/'readmees.md';meta=root/'artifacts.json'
+            en.write_text(english);es.write_text('invalid markers');meta.write_text(json.dumps(metadata()))
+            result=subprocess.run([sys.executable,str(ROOT/'.github/scripts/update_downloads.py'),'--readme',str(en),'--language','en','--readme-es',str(es),'--artifacts',str(meta),'--repository','spirock/seiya','--run-id','123','--sha','a'*40],capture_output=True,text=True)
+            self.assertNotEqual(result.returncode,0);self.assertEqual(en.read_text(),english);self.assertEqual(es.read_text(),'invalid markers')
 
     def test_public_roadmap_has_no_conversation_attribution_or_private_plan_links(self):
         roadmap = (ROOT / 'ROADMAP.md').read_text(encoding='utf-8')
         for phrase in ('el usuario solicit', 'usuario autoriza', 'petición del usuario'):
             self.assertNotIn(phrase, roadmap.lower())
-        documents = [ROOT / 'README.md', ROOT / 'ROADMAP.md', *list((ROOT / 'docs').rglob('*.md'))]
+        documents = [ROOT / 'README.md', ROOT/'readmees.md', ROOT / 'ROADMAP.md', *list((ROOT / 'docs').rglob('*.md'))]
         for path in documents:
             text = path.read_text(encoding='utf-8')
             self.assertIsNone(re.search(r'\]\([^)]*(?:\.\./|\b)plans/', text), str(path))

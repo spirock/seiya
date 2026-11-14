@@ -21,11 +21,16 @@ README sigue describiendo el build distribuido anteriormente.
 | Linux/Windows nuevos | Código compartido y pruebas de contratos | Builds nativos, GUI e inferencia del cambio pendientes |
 | Distribución | Instaladores generados por Actions, identificados por SHA/run | Descargar solo el build indicado; instalación/feedback reales y firma pendientes |
 
+El nuevo formato de DMG permite arrastrar la app a Aplicaciones, con PKG opcional
+separado. La portada README es inglesa y readmees.md conserva español; las dos
+actualizan enlaces al mismo build. El asistente añade feedback junto al botón
+Revisar y una acción explícita de borrador solo texto, sin saltarse validaciones.
+
 HTML/CSS/JS y diseño se conservan. El incremento de imágenes conversacionales
 añade un puente JS acotado al panel existente, sin modificar los seis assets
 congelados. Sin Docker ni gestor de ventanas nuevo. No hay garantía de memoria
 suficiente ni residencia múltiple: los motores externos conservan esa autoridad.
 
-Regresión offline actual:496 Rust,194 Python,5 suites Node correctas;24 ignored.
+Regresión offline previa a feedback UI:497 Rust,194 Python,5 suites Node correctas;24 ignored.
 fmt, Clippy y diff-check correctos; seis hashes congelados intactos. No sustituye
 pruebas con modelos, motores o dispositivos reales.

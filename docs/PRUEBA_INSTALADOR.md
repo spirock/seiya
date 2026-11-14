@@ -8,10 +8,14 @@ solo el nombre del archivo. Los artefactos Actions pueden exigir sesión GitHub.
 ## macOS Apple Silicon
 
 1. Descargar el artefacto macOS ARM64 del run indicado y extraer el ZIP de Actions.
-   El DMG contiene el mismo PKG, nota y hashes; no hace falta instalar ambos.
+   En el nuevo formato, el DMG contiene Seiya Rust.app y un acceso a Aplicaciones;
+   arrastrar la app a Aplicaciones y expulsar el volumen. No se arrastra el DMG.
+   Los builds anteriores contienen un PKG dentro del DMG; revisar el commit.
 2. Cerrar una instancia anterior de Seiya con su control Detener/Cerrar y esperar
    confirmación. No cerrar Ollama compartido ni borrar datos, locks o journals.
-3. Instalar manualmente el PKG y abrir **Seiya Rust.app** desde Aplicaciones.
+3. Abrir **Seiya Rust.app** desde Aplicaciones. El PKG se ofrece como descarga
+   separada opcional: instala la misma app y wrappers de terminal seiya-rust y
+   seiya-rust-server. No hace falta usar ambos formatos.
    El paquete no incluye modelos ni motores y no los descarga automáticamente.
 4. Debe abrirse la web local de configuración sin inferencia automática. Revisar
    la ruta Ollama y su aviso encontrado/no encontrado/ruta guardada inválida.
@@ -28,6 +32,35 @@ anotar el aviso exacto para feedback y decidir según la política del equipo.
 **No desactivar Gatekeeper ni la protección global del sistema.** Esta entrega
 no acredita instalación, GPU, RAM/VRAM libre, compatibilidad de todos los motores
 o sesiones prolongadas por haber superado compilación y pruebas sintéticas.
+
+### Si «Revisar configuración» parece no responder
+
+La revisión no carga modelos. Comprueba si falta el campo obligatorio Cerebro o
+alguna ruta; el resultado debe verse junto al botón y la aprobación aparecer debajo.
+En builds anteriores el mensaje estaba al inicio del panel desplazable: subir
+hasta arriba permite leer el error que quedó fuera de la vista.
+
+Si se ha seleccionado imagen pero sd-cli/assets están vacíos, completar esas rutas
+o pulsar «Desactivar imágenes en este borrador» para preparar solo texto. En builds
+anteriores, vaciar manualmente Pipeline de imágenes. Esa acción no guarda ni inicia
+nada: aún hay que revisar y confirmar un motor/almacén de texto válido. Nunca
+interpretar «Guardar asignaciones en este navegador» como activar los modelos.
+
+### OpenCode muestra «API key required»
+
+Ese401 indica que el servicio API no recibió autorización Bearer; no demuestra un
+fallo del modelo. La sesión/cookie web y la API compatible con OpenCode son accesos
+distintos; la URL /trial/ del navegador no es el endpoint OpenAI /v1.
+El proveedor seiya debe usar la misma clave privada configurada para el servidor
+API al que apunta baseURL. No sirve inventar una clave, reutilizar la cookie web
+ni desactivar autenticación para ocultar el error. El ejemplo legacy con apiKey
+local no acredita acceso a un servidor autenticado con otra clave.
+Comprobar únicamente baseURL y presencia/origen de apiKey, sin publicar su valor.
+Las variables {env:...} deben estar disponibles para el proceso que carga la
+configuración; una variable ausente se convierte en cadena vacía. La referencia
+oficial V2 permite también {file:...} para claves privadas fuera del JSON.
+No reiniciar el servicio compartido de OpenCode ni arrancar otro coordinador sobre
+el runtime activo para diagnosticarlo. Ver https://opencode.ai/docs/config.
 
 ## Windows y Linux
 
