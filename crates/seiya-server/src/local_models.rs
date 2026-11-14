@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 pub(crate) mod desktop;
 mod images;
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 pub(crate) use images::fixture_png;
 pub(crate) mod ollama;
 mod pool;

@@ -400,7 +400,6 @@ impl ImageJobs {
         Ok(())
     }
     /// Host shutdown only; revocation must precede this call. HTTP has no reset.
-    #[cfg(target_os = "macos")]
     pub(crate) async fn shutdown(&self) -> bool {
         {
             let mut s = self.registry.lock().unwrap();
@@ -896,6 +895,12 @@ impl ImageJobs {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn empty_broker_shutdown_is_portable_and_does_not_dispatch() {
+        let (jobs, _, calls) = fixture(false, false, Duration::from_secs(30));
+        assert!(jobs.shutdown().await);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
     #[tokio::test]
     async fn queued_cancel_cannot_remove_a_record_before_its_task_drains() {
         let (j, _, calls) = fixture(false, false, Duration::from_secs(30));
