@@ -185,7 +185,7 @@ fn valid_url(url: &str, bootstrap: bool) -> bool {
     let Ok(u) = reqwest::Url::parse(url) else {
         return false;
     };
-    let prefix = if bootstrap { "/session/" } else { "/trial/" };
+    let prefix = if bootstrap { "/session/" } else { "/app/" };
     u.scheme() == "http"
         && u.host_str() == Some("127.0.0.1")
         && u.port() == Some(8015)

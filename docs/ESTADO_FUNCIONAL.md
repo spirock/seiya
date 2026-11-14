@@ -25,6 +25,8 @@ El nuevo formato de DMG permite arrastrar la app a Aplicaciones, con PKG opciona
 separado. La portada README es inglesa y readmees.md conserva español; las dos
 actualizan enlaces al mismo build. El asistente añade feedback junto al botón
 Revisar y una acción explícita de borrador solo texto, sin saltarse validaciones.
+El acceso local usa /app/ sin caducidad30min ni plazo total de host desktop;
+reiniciar/cerrar revoca la sesión. Los límites por inferencia siguen activos.
 
 HTML/CSS/JS y diseño se conservan. El incremento de imágenes conversacionales
 añade un puente JS acotado al panel existente, sin modificar los seis assets

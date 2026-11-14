@@ -163,7 +163,7 @@ async fn page() -> Html<String> {
     Html(format!(
         "{shell}{}<script>{}\n{}</script></html>",
         include_str!("desktop_setup.html"),
-        include_str!("desktop_setup.js"),
+        include_str!("desktop_setup.js").replace(r"trial\/", r"app\/"),
         include_str!("desktop_setup_feedback.js")
     ))
 }

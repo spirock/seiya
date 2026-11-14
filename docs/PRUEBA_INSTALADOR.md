@@ -35,6 +35,13 @@ o sesiones prolongadas por haber superado compilación y pruebas sintéticas.
 
 ### Si «Revisar configuración» parece no responder
 
+El acceso local de los builds nuevos usa /app/ y no caduca a los30min: dura
+mientras el host esté abierto y el navegador conserve su cookie de sesión.
+Cerrar/reiniciar la app revoca enlaces/cookies anteriores; abrirla desde
+Aplicaciones crea un acceso nuevo. No usar una pestaña guardada del host viejo.
+Los builds anteriores usan /trial/ y cookie30min. Los ensayos LAN/TLS conservan
+su duración acotada; los límites por generación/memoria no se eliminan.
+
 La revisión no carga modelos. Comprueba si falta el campo obligatorio Cerebro o
 alguna ruta; el resultado debe verse junto al botón y la aprobación aparecer debajo.
 En builds anteriores el mensaje estaba al inicio del panel desplazable: subir

@@ -61,7 +61,7 @@ pub async fn gemma_smoke(root: &Path) -> Result<Value, String> {
         pair_trial::native::stage(&root.join("models"),&source,FOREGROUND,pair_trial::native::DIGESTS[0])?;
         drop(lease);
         let settings=crate::diagnostics::Diagnostics::memory(Arc::new(native::memory));report["limits"]=serde_json::to_value(settings.limits()).map_err(|_|"smoke_limits")?;
-        let session=Arc::new(Session{feature_controlled:false,multiagent_configured:false,images_enabled:false,settings,until:Instant::now()+Duration::from_secs(180),enabled:AtomicBool::new(true),failed:AtomicBool::new(false),residency:Residency::new()});
+        let session=Arc::new(Session{feature_controlled:false,multiagent_configured:false,images_enabled:false,settings,until:Some(Instant::now()+Duration::from_secs(180)),enabled:AtomicBool::new(true),failed:AtomicBool::new(false),residency:Residency::new()});
         let chat=Chat{model:FOREGROUND,session:session.clone(),root:root.to_owned(),source,binary:pair_trial::native::OLLAMA.into(),environment:Environment::legacy()};
         let mut interrupt=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).map_err(|_|"smoke_signal")?;let mut term=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).map_err(|_|"smoke_signal")?;
         report["turn_attempted"]=json!(true);
@@ -104,7 +104,7 @@ struct Session {
     multiagent_configured: bool,
     images_enabled: bool,
     settings: Arc<crate::diagnostics::Diagnostics>,
-    until: Instant,
+    until: Option<Instant>,
     enabled: AtomicBool,
     failed: AtomicBool,
     residency: Arc<Residency>,
@@ -115,7 +115,7 @@ impl Session {
             && self.residency.snapshot().phase != ResidencyPhase::Quarantined
             && !self.settings.storage_failed()
             && !self.failed.load(Ordering::Acquire)
-            && Instant::now() < self.until
+            && self.until.is_none_or(|until| Instant::now() < until)
     }
     fn stop(&self) {
         self.enabled.store(false, Ordering::Release);
@@ -923,7 +923,11 @@ async fn run_mode(
         feature_controlled: evaluation,
         multiagent_configured: auxiliary_configured,
         images_enabled: images_configured,
-        until: Instant::now() + Duration::from_secs(settings.limits().session_seconds),
+        until: if local {
+            None
+        } else {
+            Some(Instant::now() + Duration::from_secs(settings.limits().session_seconds))
+        },
         settings: settings.clone(),
         enabled: AtomicBool::new(true),
         failed: AtomicBool::new(false),
@@ -1177,7 +1181,7 @@ async fn run_mode(
     save(
         root,
         "startup-evidence.json",
-        &json!({"ready":smoke.is_ok(),"pid":std::process::id(),"chat_smoke_validated":!gemma_only&&!evaluation&&smoke.is_ok(),"automatic_chat_probe":!gemma_only&&!evaluation,"error":smoke.as_ref().err(),"image_inference_requested":false,"mode":if local{"desktop-loopback"}else if evaluation{"manual-evaluation"}else if gemma_only{"manual-gemma-web"}else{"sequential-gemma-images"},"address":address,"tls":if local{None}else{Some("1.3")},"source_subnet_prefix":config.prefix,"expires_at_unix":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().map(|n|n.as_secs()+session.until.saturating_duration_since(Instant::now()).as_secs()),"expires_in_seconds":session.until.saturating_duration_since(Instant::now()).as_secs()}),
+        &json!({"ready":smoke.is_ok(),"pid":std::process::id(),"chat_smoke_validated":!gemma_only&&!evaluation&&smoke.is_ok(),"automatic_chat_probe":!gemma_only&&!evaluation,"error":smoke.as_ref().err(),"image_inference_requested":false,"mode":if local{"desktop-loopback"}else if evaluation{"manual-evaluation"}else if gemma_only{"manual-gemma-web"}else{"sequential-gemma-images"},"address":address,"tls":if local{None}else{Some("1.3")},"source_subnet_prefix":config.prefix,"expires_at_unix":session.until.and_then(|until|std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().map(|n|n.as_secs()+until.saturating_duration_since(Instant::now()).as_secs())),"expires_in_seconds":session.until.map(|until|until.saturating_duration_since(Instant::now()).as_secs())}),
     )?;
     if !local {
         println!(
@@ -1204,7 +1208,14 @@ async fn run_mode(
                 std::future::pending::<()>().await;
             }
         };
-        tokio::select! {_=&mut web=>{session.fail();true},_=term.recv()=>false,_=interrupt.recv()=>false,_=stop=>false,_=tokio::time::sleep_until(session.until.into())=>false}
+        let expiry = async {
+            if let Some(until) = session.until {
+                tokio::time::sleep_until(until.into()).await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
+        tokio::select! {_=&mut web=>{session.fail();true},_=term.recv()=>false,_=interrupt.recv()=>false,_=stop=>false,_=expiry=>false}
     } else {
         false
     };
@@ -1313,7 +1324,7 @@ mod tests {
             settings: crate::diagnostics::Diagnostics::memory(Arc::new(
                 || json!({"pressure":1,"swap_bytes":0}),
             )),
-            until: Instant::now() + Duration::from_secs(60),
+            until: Some(Instant::now() + Duration::from_secs(60)),
             enabled: AtomicBool::new(true),
             failed: AtomicBool::new(false),
             residency: Residency::new(),
@@ -1349,11 +1360,28 @@ mod tests {
             settings: crate::diagnostics::Diagnostics::memory(Arc::new(
                 || json!({"pressure":1,"swap_bytes":0}),
             )),
-            until: Instant::now(),
+            until: Some(Instant::now()),
             enabled: AtomicBool::new(true),
             failed: AtomicBool::new(false),
             residency: Residency::new(),
         });
+        assert!(s.acquire(1).await.is_err());
+    }
+    #[tokio::test]
+    async fn desktop_session_without_deadline_still_revokes_on_stop_and_quarantine() {
+        let mut s = session();
+        Arc::get_mut(&mut s).unwrap().until = None;
+        assert!(s.live());
+        let mut turn = s.acquire(1).await.unwrap();
+        turn.confirm();
+        drop(turn);
+        s.stop();
+        assert!(!s.live());
+        assert!(s.acquire(2).await.is_err());
+        let mut s = session();
+        Arc::get_mut(&mut s).unwrap().until = None;
+        s.residency.quarantine();
+        assert!(!s.live());
         assert!(s.acquire(1).await.is_err());
     }
     #[tokio::test]

@@ -50,6 +50,14 @@ El control manual evita el turno del cerebro, pero conserva los límites de imag
 
 ## Estado, fallos y reinicio
 
+La sesión desktop local no tiene un plazo total; el host puede permanecer abierto
+sin caducidad por tiempo. Se mantiene stop explícito/revocación, límites de memoria,
+propiedad y deadline de cada operación. No se conservan pesos residentes por ello.
+El acceso web loopback usa /app/ y cookie HttpOnly sin Max-Age. El navegador
+puede descartarla al cerrar su sesión; reiniciar Seiya siempre invalida el acceso
+anterior. Ensayos/LAN temporales conservan sus límites. No es sesión persistida
+para sobrevivir reinicios ni permiso para quitar auth.
+
 /health.runtime_status.managed_residency muestra phase, role, admission,
 owned_cleanup_confirmed y physical_memory_release_measured=false. Es estado del
 host; no leer texto del modelo como progreso, permisos o evidencia de descarga.

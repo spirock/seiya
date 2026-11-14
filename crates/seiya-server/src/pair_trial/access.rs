@@ -20,6 +20,7 @@ use std::{
 };
 use subtle::ConstantTimeEq;
 struct Access {
+    local_app: bool,
     scheme: &'static str,
     host: String,
     key: String,
@@ -40,11 +41,12 @@ pub(crate) fn desktop_shell(address: SocketAddr, inner: Router) -> (Router, Stri
         )
     };
     let a = Arc::new(Access {
+        local_app: true,
         scheme: "http",
         host: address.to_string(),
         key: token(),
         bootstrap: vec![(token(), AtomicBool::new(false))],
-        prefix: format!("/trial/{}", uuid::Uuid::new_v4().simple()),
+        prefix: format!("/app/{}", uuid::Uuid::new_v4().simple()),
     });
     let link = format!("http://{address}/session/{}", a.bootstrap[0].0);
     let home = format!("http://{address}{}/", a.prefix);
@@ -95,7 +97,7 @@ async fn cookie(State(a): State<Arc<Access>>, mut r: Request, next: Next) -> Res
             let values: Vec<_> = raw
                 .split(';')
                 .map(str::trim)
-                .filter_map(|s| s.strip_prefix("seiya_trial="))
+                .filter_map(|s| s.strip_prefix("seiya_access="))
                 .collect();
             if values.len() == 1 && same(values[0], &a.key) {
                 r.headers_mut().insert(
@@ -130,9 +132,10 @@ async fn bootstrap(
             (
                 header::SET_COOKIE,
                 format!(
-                    "seiya_trial={}; HttpOnly; SameSite=Strict; Path={}/; Max-Age=1800{}",
+                    "seiya_access={}; HttpOnly; SameSite=Strict; Path={}/{}{}",
                     a.key,
                     a.prefix,
+                    if a.local_app { "" } else { "; Max-Age=1800" },
                     if a.scheme == "https" { "; Secure" } else { "" }
                 ),
             ),
@@ -184,13 +187,22 @@ fn configured_links(
         )
     };
     let a = Arc::new(Access {
+        local_app: scheme == "http" && address.ip().is_loopback(),
         scheme,
         host: address.to_string(),
         key: token(),
         bootstrap: (0..count)
             .map(|_| (token(), AtomicBool::new(false)))
             .collect(),
-        prefix: format!("/trial/{}", uuid::Uuid::new_v4().simple()),
+        prefix: format!(
+            "/{}/{}",
+            if scheme == "http" && address.ip().is_loopback() {
+                "app"
+            } else {
+                "trial"
+            },
+            uuid::Uuid::new_v4().simple()
+        ),
     });
     state.browser_prefix(a.prefix.clone());
     let links = a
@@ -224,6 +236,76 @@ mod tests {
     };
     use axum::body::Body;
     use tower::ServiceExt;
+    #[tokio::test(start_paused = true)]
+    async fn local_app_cookie_has_no_timer_and_restart_requires_fresh_bootstrap() {
+        let address = "127.0.0.1:8015".parse().unwrap();
+        let inner = Router::new().route("/", get(|| async { "setup" }));
+        let (app, link, _) = desktop_shell(address, inner.clone());
+        let req = |path: &str, cookie: &str| {
+            axum::http::Request::get(path)
+                .header(header::HOST, "127.0.0.1:8015")
+                .header(header::COOKIE, cookie)
+                .body(Body::empty())
+                .unwrap()
+        };
+        let response = app
+            .clone()
+            .oneshot(req(reqwest::Url::parse(&link).unwrap().path(), ""))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 303);
+        let raw = response.headers()[header::SET_COOKIE].to_str().unwrap();
+        assert!(!raw.contains("Max-Age"));
+        assert!(!raw.contains("Expires"));
+        assert!(raw.contains("HttpOnly; SameSite=Strict"));
+        assert!(!raw.contains("trial"));
+        let cookie = raw.split(';').next().unwrap().to_owned();
+        let path = response.headers()[header::LOCATION]
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(path.starts_with("/app/"));
+        tokio::time::advance(std::time::Duration::from_secs(24 * 3600)).await;
+        assert_eq!(
+            app.clone()
+                .oneshot(req(&path, &cookie))
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
+        assert_eq!(
+            app.oneshot(req(reqwest::Url::parse(&link).unwrap().path(), ""))
+                .await
+                .unwrap()
+                .status(),
+            403
+        );
+        let (restarted, fresh, _) = desktop_shell(address, inner);
+        assert_eq!(
+            restarted
+                .clone()
+                .oneshot(req(&path, &cookie))
+                .await
+                .unwrap()
+                .status(),
+            404
+        );
+        let fresh = restarted
+            .clone()
+            .oneshot(req(reqwest::Url::parse(&fresh).unwrap().path(), ""))
+            .await
+            .unwrap();
+        let fresh_path = fresh.headers()[header::LOCATION].to_str().unwrap();
+        assert_eq!(
+            restarted
+                .oneshot(req(fresh_path, &cookie))
+                .await
+                .unwrap()
+                .status(),
+            401
+        );
+    }
     #[tokio::test]
     async fn desktop_loopback_cookie_root_preserves_css_and_rejects_foreign_origin() {
         use http_body_util::BodyExt;
@@ -247,6 +329,10 @@ mod tests {
             .next()
             .unwrap()
             .to_owned();
+        assert!(!response.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .contains("Max-Age"));
         let path = response.headers()[header::LOCATION]
             .to_str()
             .unwrap()
@@ -310,6 +396,14 @@ mod tests {
         };
         let r = app.clone().oneshot(request(&probe)).await.unwrap();
         assert_eq!(r.status(), 303);
+        assert!(r.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .contains("Max-Age=1800; Secure"));
+        assert!(r.headers()[header::LOCATION]
+            .to_str()
+            .unwrap()
+            .starts_with("/trial/"));
         let cookie = r.headers()[header::SET_COOKIE]
             .to_str()
             .unwrap()

@@ -111,7 +111,7 @@ impl Host for FakeHost {
         };
         let _ = tx.send(Ready {
             bootstrap,
-            home: format!("http://127.0.0.1:8015/trial/{}/", "b".repeat(32)),
+            home: format!("http://127.0.0.1:8015/app/{}/", "b".repeat(32)),
         });
         let active = self.active.clone();
         let stops = self.stops.clone();
@@ -265,7 +265,7 @@ async fn reopen_uses_authenticated_home_without_replaying_bootstrap() {
     let opened = ui.opened.lock().unwrap();
     assert_eq!(opened.len(), 2);
     assert!(opened[0].contains("/session/"));
-    assert!(opened[1].contains("/trial/"));
+    assert!(opened[1].contains("/app/"));
 }
 #[tokio::test]
 async fn shutdown_before_menu_never_starts_or_writes() {

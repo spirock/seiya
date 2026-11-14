@@ -250,6 +250,7 @@ async fn inert_shell_preserves_styles_and_requires_auth_before_side_effects() {
     );
     assert!(html.contains("Gestor de modelos por roles"));
     assert!(html.contains("setupReviewFeedback"));
+    assert!(html.contains(r"app\/[a-f0-9]{32}"));
     assert!(html.contains("Desactivar imágenes en este borrador"));
     assert!(!html.contains("async function send"));
     assert_eq!(fake.starts.load(Ordering::SeqCst), 0);
