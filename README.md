@@ -19,13 +19,13 @@ stays HTML/CSS/JavaScript. **Pegassus** is the public model identity
 ## Downloads
 
 <!-- seiya-downloads:start -->
-**Latest verified build:** [`e7d6cbc`](https://github.com/spirock/seiya/actions/runs/43585855303).
+**Latest verified build:** [`665edce`](https://github.com/spirock/seiya/actions/runs/43590893876).
 
 | Platform | Download |
 |---|---|
-| Windows x64 | [.exe installer](https://github.com/spirock/seiya/actions/runs/43585855303/artifacts/14110776488) · [Portable ZIP](https://github.com/spirock/seiya/actions/runs/43585855303/artifacts/14110726653) |
-| macOS Apple Silicon | [.dmg / .pkg](https://github.com/spirock/seiya/actions/runs/43585855303/artifacts/14110087539) |
-| Linux x64 | [.deb](https://github.com/spirock/seiya/actions/runs/43585855303/artifacts/14110591605) |
+| Windows x64 | [.exe installer](https://github.com/spirock/seiya/actions/runs/43590893876/artifacts/14112217828) · [Portable ZIP](https://github.com/spirock/seiya/actions/runs/43590893876/artifacts/14112148576) |
+| macOS Apple Silicon | [DMG · drag to Applications](https://github.com/spirock/seiya/actions/runs/43590893876/artifacts/14112481523) · [Optional PKG](https://github.com/spirock/seiya/actions/runs/43590893876/artifacts/14112765862) |
+| Linux x64 | [.deb](https://github.com/spirock/seiya/actions/runs/43590893876/artifacts/14111124687) |
 <!-- seiya-downloads:end -->
 
 GitHub Actions updates both language versions after the complete build succeeds.
