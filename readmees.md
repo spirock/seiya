@@ -12,13 +12,13 @@ Repositorio público: [spirock/seiya](https://github.com/spirock/seiya).
 ## Descargas
 
 <!-- seiya-downloads:start -->
-**Último build verificado:** [`665edce`](https://github.com/spirock/seiya/actions/runs/43590893876).
+**Último build verificado:** [`bbe3139`](https://github.com/spirock/seiya/actions/runs/43609266226).
 
 | Sistema | Descarga |
 |---|---|
-| Windows x64 | [Instalador .exe](https://github.com/spirock/seiya/actions/runs/43590893876/artifacts/14112217828) · [ZIP portable](https://github.com/spirock/seiya/actions/runs/43590893876/artifacts/14112148576) |
-| macOS Apple Silicon | [DMG · arrastrar a Aplicaciones](https://github.com/spirock/seiya/actions/runs/43590893876/artifacts/14112481523) · [PKG opcional](https://github.com/spirock/seiya/actions/runs/43590893876/artifacts/14112765862) |
-| Linux x64 | [.deb](https://github.com/spirock/seiya/actions/runs/43590893876/artifacts/14111124687) |
+| Windows x64 | [Instalador .exe](https://github.com/spirock/seiya/actions/runs/43609266226/artifacts/14118818728) · [ZIP portable](https://github.com/spirock/seiya/actions/runs/43609266226/artifacts/14118773930) |
+| macOS Apple Silicon | [DMG · arrastrar a Aplicaciones](https://github.com/spirock/seiya/actions/runs/43609266226/artifacts/14119825825) · [PKG opcional](https://github.com/spirock/seiya/actions/runs/43609266226/artifacts/14119464548) |
+| Linux x64 | [.deb](https://github.com/spirock/seiya/actions/runs/43609266226/artifacts/14119696560) |
 <!-- seiya-downloads:end -->
 
 Actions actualiza este bloque al completar correctamente un nuevo build de `main`.
