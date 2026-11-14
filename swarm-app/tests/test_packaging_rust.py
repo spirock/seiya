@@ -99,6 +99,12 @@ class RustPackagingTests(unittest.TestCase):
             self.assertFalse(any(p.suffix in ('.py', '.gguf', '.der') for p in stage.rglob('*')))
             self.assertEqual((app / 'MacOS/seiya-desktop').read_bytes(), (source / 'seiya-desktop').read_bytes())
             self.assertTrue((app / 'Resources/desktop.example.json').is_file())
+            self.assertTrue((app / 'Resources/local-models.example.json').is_file())
+            self.assertTrue((app / 'Resources/LOCAL_MODELS.md').is_file())
+            self.assertTrue((app / 'Resources/BACKENDS_LOCALES.md').is_file())
+            for name in ('IMAGENES_DESDE_CHAT.md','RESIDENCIA_NATIVA.md','PRUEBA_INSTALADOR.md','desktop-chat-images.example.json','local-models-images.example.json'):
+                self.assertTrue((app / 'Resources' / name).is_file(), name)
+            self.assertTrue(json.loads((app / 'Resources/desktop-chat-images.example.json').read_text())['chat_images'])
 
     def test_wrong_os_arch_symlinks_and_nonexecutables_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:

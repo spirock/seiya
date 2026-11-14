@@ -61,6 +61,9 @@ impl Config {
         }
         if let Some(runtime) = &self.runtime {
             runtime.validate()?;
+            if runtime.backend == crate::runtime::Backend::OpenaiLocal {
+                return Err(ConfigError("openai_local requires the owned catalogue host; plain API configuration is not an ownership grant"));
+            }
             if self.listen.port() != 0 && runtime.endpoint()?.port() == Some(self.listen.port()) {
                 return Err(ConfigError(
                     "runtime endpoint must not point to the frontend listener",

@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "id": "brain-small",
+      "runtime": {
+        "id": "brain-small",
+        "model": "example-local-chat-binding",
+        "backend": "openai_local",
+        "base_url": "http://127.0.0.1:8080/v1",
+        "timeout_seconds": 120,
+        "max_output_tokens": 256
+      },
+      "supports_tools": false,
+      "max_input_bytes": 16384
+    },
+    {
+      "id": "code-large",
+      "runtime": {
+        "id": "code-large",
+        "model": "example-local-code-binding",
+        "backend": "openai_local",
+        "base_url": "http://127.0.0.1:8081/v1",
+        "timeout_seconds": 120,
+        "max_output_tokens": 256
+      },
+      "supports_tools": false,
+      "max_input_bytes": 16384
+    }
+  ],
+  "assignments": { "brain": "brain-small", "workers": [] },
+  "minimum_available_mib": 2048
+}

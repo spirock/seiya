@@ -354,6 +354,8 @@ impl Host for NativeHost {
                 image_web::DesktopControl {
                     ready: tx,
                     stop: rx,
+                    mount: None,
+                    setup_home: None,
                 },
             )
             .await
@@ -387,3 +389,6 @@ pub async fn launch() -> std::result::Result<(), String> {
 
 #[cfg(test)]
 mod tests;
+
+mod web_adapter;
+pub(crate) use web_adapter::WebAdapter;

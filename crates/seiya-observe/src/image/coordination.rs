@@ -12,6 +12,7 @@ use std::{
 
 pub const LEGACY_BASE: &str = "/private/var/folders/tc/6nkb5t5d5116q143rzc2dy400000gn/T/opencode";
 const LOCK: &str = "seiya-mlx-baseline.lock";
+pub const NATIVE_INFLIGHT: &str = "native-model.inflight";
 const MARKERS: [&str; 2] = [
     "image-cleanup-uncertain.json",
     "pair-cleanup-uncertain.json",
@@ -96,6 +97,24 @@ impl Coordination {
             lease.domains.push(directory.clone());
         }
         for domain in &lease.domains {
+            // Current native hosts also honor pending external HTTP operations.
+            // Never inspect their contents as authority or recover them here.
+            let entries = fs::read_dir(domain).map_err(|_| "quarantine_observation_failed")?;
+            for (index, entry) in entries.enumerate() {
+                if index >= 4096 {
+                    return Err("coordination_directory_limit".into());
+                }
+                let name = entry
+                    .map_err(|_| "quarantine_observation_failed")?
+                    .file_name();
+                let name = name.to_string_lossy();
+                if name == NATIVE_INFLIGHT {
+                    return Err("native_model_pending_operator_review_required".into());
+                }
+                if name.starts_with("http-") && name.ends_with(".inflight") {
+                    return Err("external_http_pending_operator_review_required".into());
+                }
+            }
             for marker in MARKERS {
                 match fs::symlink_metadata(domain.join(marker)) {
                     Ok(_) => {
@@ -116,6 +135,41 @@ pub struct ModelLease {
 }
 
 impl ModelLease {
+    /// Persist before spawning an owned model process. The caller must retain
+    /// this model lease until native operation cleanup/intent confirmation.
+    pub fn begin_native(&self, operation: &str) -> Result<NativeOperation, String> {
+        if !matches!(operation, "ollama" | "image") {
+            return Err("native_operation_invalid".into());
+        }
+        let bytes = serde_json::to_vec(
+            &serde_json::json!({"version":1,"operation":operation,"cleanup_confirmed":false}),
+        )
+        .map_err(|_| "native_intent_encode")?;
+        let mut records = vec![];
+        for directory in &self.domains {
+            private_directory(directory)?;
+            let file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+                .open(directory.join(NATIVE_INFLIGHT))
+                .map_err(|_| "native_intent_create")?;
+            // If any persistence step fails, leave every observed intent in
+            // place. No process may be spawned after this error.
+            (&file)
+                .write_all(&bytes)
+                .and_then(|_| file.sync_all())
+                .and_then(|_| File::open(directory)?.sync_all())
+                .map_err(|_| "native_intent_persist")?;
+            records.push((directory.clone(), file));
+        }
+        if records.is_empty() {
+            return Err("native_intent_authority_required".into());
+        }
+        Ok(NativeOperation { records })
+    }
     /// Caller must retain/leak the lease if this cannot durably mark every domain.
     pub fn quarantine(&self, name: &str, marker: &Value) -> Result<(), String> {
         if !MARKERS.contains(&name) {
@@ -142,6 +196,41 @@ impl ModelLease {
         } else {
             Ok(())
         }
+    }
+}
+
+/// Drop intentionally retains markers: loss of the future/process never proves
+/// that a model was unloaded. Only owned native cleanup may call confirm().
+pub struct NativeOperation {
+    records: Vec<(PathBuf, File)>,
+}
+impl NativeOperation {
+    pub fn confirm(self) -> Result<(), String> {
+        fn unchanged(directory: &Path, file: &File) -> Result<(), String> {
+            private_directory(directory)?;
+            let expected = file.metadata().map_err(|_| "native_intent_metadata")?;
+            let current = fs::symlink_metadata(directory.join(NATIVE_INFLIGHT))
+                .map_err(|_| "native_intent_missing")?;
+            if !current.is_file()
+                || current.file_type().is_symlink()
+                || current.nlink() != 1
+                || expected.dev() != current.dev()
+                || expected.ino() != current.ino()
+            {
+                return Err("native_intent_changed".into());
+            }
+            Ok(())
+        }
+        for (directory, file) in &self.records {
+            unchanged(directory, file)?;
+        }
+        for (directory, file) in &self.records {
+            unchanged(directory, file)?;
+            fs::remove_file(directory.join(NATIVE_INFLIGHT))
+                .and_then(|_| File::open(directory)?.sync_all())
+                .map_err(|_| "native_intent_confirm")?;
+        }
+        Ok(())
     }
 }
 
@@ -257,6 +346,62 @@ mod tests {
         assert!(old.acquire().is_ok());
     }
     #[test]
+    fn native_intent_survives_drop_and_blocks_both_domains_without_replay() {
+        let f = Fixture::new();
+        let lease = f.coord.acquire().unwrap();
+        let intent = lease.begin_native("ollama").unwrap();
+        for domain in ["stable", "legacy"] {
+            let v: Value = serde_json::from_slice(
+                &fs::read(f.root.join(domain).join(NATIVE_INFLIGHT)).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(v["cleanup_confirmed"], false);
+        }
+        drop(intent);
+        drop(lease);
+        assert!(
+            matches!(f.coord.acquire(),Err(e) if e=="native_model_pending_operator_review_required")
+        );
+        assert!(Coordination {
+            stable: None,
+            legacy: f.root.join("legacy")
+        }
+        .acquire()
+        .is_err());
+    }
+    #[test]
+    fn confirmed_cleanup_removes_only_owned_intent_and_allows_next_model() {
+        let f = Fixture::new();
+        let lease = f.coord.acquire().unwrap();
+        assert!(lease.begin_native("unknown").is_err());
+        lease.begin_native("image").unwrap().confirm().unwrap();
+        drop(lease);
+        for domain in ["stable", "legacy"] {
+            assert!(!f.root.join(domain).join(NATIVE_INFLIGHT).exists());
+        }
+        assert!(f.coord.acquire().is_ok());
+    }
+    #[test]
+    fn changed_or_partially_persisted_intent_never_unlinks_foreign_files() {
+        let f = Fixture::new();
+        let lease = f.coord.acquire().unwrap();
+        let intent = lease.begin_native("ollama").unwrap();
+        let path = f.root.join("stable").join(NATIVE_INFLIGHT);
+        fs::rename(&path, f.root.join("original-intent")).unwrap();
+        fs::write(&path, b"replacement").unwrap();
+        assert!(intent.confirm().is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"replacement");
+        drop(lease);
+        assert!(f.coord.acquire().is_err());
+        let f = Fixture::new();
+        let lease = f.coord.acquire().unwrap();
+        let existing = f.root.join("legacy").join(NATIVE_INFLIGHT);
+        fs::write(&existing, b"preexisting").unwrap();
+        assert!(lease.begin_native("image").is_err());
+        assert_eq!(fs::read(existing).unwrap(), b"preexisting");
+        assert!(f.root.join("stable").join(NATIVE_INFLIGHT).exists());
+    }
+    #[test]
     fn either_domain_quarantine_blocks_and_is_not_archived() {
         for domain in ["legacy", "stable"] {
             let f = Fixture::new();
@@ -265,6 +410,16 @@ mod tests {
             assert!(f.coord.acquire().is_err());
             assert_eq!(fs::read(path).unwrap(), b"untrusted marker");
         }
+    }
+    #[test]
+    fn external_http_pending_blocks_native_and_is_never_deleted() {
+        let f = Fixture::new();
+        let path = f.root.join("stable/http-8080.inflight");
+        fs::write(&path, b"synthetic pending request").unwrap();
+        assert!(
+            matches!(f.coord.acquire(),Err(e) if e=="external_http_pending_operator_review_required")
+        );
+        assert_eq!(fs::read(path).unwrap(), b"synthetic pending request");
     }
     #[test]
     fn uncertain_cleanup_fans_out_and_blocks_old_launcher() {

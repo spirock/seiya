@@ -14,7 +14,8 @@ from build import ROOT, VERSION, write
 
 FILES = {'seiya-desktop.exe', 'seiya-server.exe', 'README.md', 'LICENSE',
          'THIRD_PARTY_NOTICES.md', 'server.discovery.example.json', 'BUILD-INFO.json',
-         'Seiya-Rust-Help.cmd'}
+         'Seiya-Rust-Help.cmd', 'Seiya-Rust.cmd', 'local-models.example.json', 'LOCAL_MODELS.md', 'BACKENDS_LOCALES.md'}
+FILES.update({'IMAGENES_DESDE_CHAT.md','RESIDENCIA_NATIVA.md','PRUEBA_INSTALADOR.md','desktop-chat-images.example.json','local-models-images.example.json'})
 
 
 def windows_binary(path):
@@ -49,11 +50,20 @@ def stage_payload(root, binaries, revision=None):
         windows_binary(root / name)
         info['binaries'][name] = hashlib.sha256((root / name).read_bytes()).hexdigest()
     for source, name in [('docs/WINDOWS_RUST.md', 'README.md'), ('LICENSE', 'LICENSE'),
-                         ('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md'),
+                          ('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md'),
+                          ('contracts/local-models/v1/catalog.example.json', 'local-models.example.json'),
+                          ('contracts/local-models/v1/README.md', 'LOCAL_MODELS.md'),
+                          ('docs/BACKENDS_LOCALES.md', 'BACKENDS_LOCALES.md'),
+                          ('docs/IMAGENES_DESDE_CHAT.md', 'IMAGENES_DESDE_CHAT.md'),
+                          ('docs/RESIDENCIA_NATIVA.md', 'RESIDENCIA_NATIVA.md'),
+                          ('docs/PRUEBA_INSTALADOR.md', 'PRUEBA_INSTALADOR.md'),
+                          ('contracts/desktop/v1/config.chat-images.example.json', 'desktop-chat-images.example.json'),
+                          ('contracts/local-models/v1/images.example.json', 'local-models-images.example.json'),
                          ('contracts/desktop/windows/server.discovery.example.json', 'server.discovery.example.json')]:
         write(root, name, (ROOT.parent / source).read_bytes())
     write(root, 'BUILD-INFO.json', json.dumps(info, indent=2) + '\n')
     write(root, 'Seiya-Rust-Help.cmd', '@echo off\r\n"%~dp0seiya-desktop.exe" --help\r\npause\r\n')
+    write(root, 'Seiya-Rust.cmd', '@echo off\r\n"%~dp0seiya-desktop.exe" --launch\r\n')
     inspect_payload(root)
 
 

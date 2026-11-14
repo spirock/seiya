@@ -1,5 +1,10 @@
 # Lector web · integración experimental S4-07
 
+Actualización Rust: el catálogo local permite ahora búsqueda/lectura opt-in
+mediante web_search=true; ver [operación](BACKENDS_LOCALES.md). Ese flujo nuevo
+está probado con fixtures, no con Internet/modelos reales. La evidencia S4-08
+de abajo pertenece al ensayo anterior, no valida la búsqueda nueva ni sus modelos.
+
 **Implementado y probado con fixtures; no activado en el servicio habitual.**
 S4-08 añadió prueba real aislada de3 páginas públicas (3/3 transporte/extracción
 OK), [evidencia](../contracts/benchmarks/web-reader/v0.1.0/README.md). No hay

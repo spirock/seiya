@@ -13,6 +13,32 @@ Windows/MSVC, auditoría DLL y ayuda/config del ZIP pasaron; instalación no pro
 
 ## Qué abrir
 
+### Fuentes nuevas · catálogo HTTP local
+
+El backend Rust de texto ya permite registrar y sustituir cerebro/trabajadores
+mediante motores externos con API OpenAI local, por ejemplo llama.cpp, sin usar
+MLX ni iniciar/descargar motores desde Seiya. Preparar `%LOCALAPPDATA%\Seiya\local-models.json`
+según el ejemplo incluido y [la operación portable](BACKENDS_LOCALES.md).
+`seiya-desktop.exe --check-catalog FILE` es offline; `--launch` abre el asistente.
+Con catálogo, las asignaciones se guardan en documento propio con CAS y pueden
+iniciar el chat bajo confirmación; sin catálogo no se inventa un modelo disponible.
+
+Todavía no publicado ni compilado/probado de nuevo en Windows real en el entorno
+local. El código/contrato se prueba con fixtures en macOS, no acredita DirectML,
+CUDA, GPU/VRAM, todos los modelos, instalación o sesión larga en Windows. Se
+conservan los assets, incluidas etiquetas heredadas macOS que no describen este
+adaptador; seguir la advertencia HTTP y mantener vacías las rutas Ollama/MLX.
+El bloque siguiente describe el incremento previo, no esta ampliación de backend.
+
+**Fuentes actuales, aún no publicadas en el build anterior:** el acceso principal
+de Inicio y `Seiya-Rust.cmd` invocan `seiya-desktop.exe --launch` y abren el mismo
+asistente web que macOS, sin configuración previa. El gestor permite editar y
+guardar IDs de roles solo como borrador en el navegador. No hay adaptador de
+inferencia/selector nativo Windows ni perfil de motores Windows: la web lo indica
+y bloquea el arranque. No descarga modelos ni usa un proveedor remoto.
+El empaquetado se comprueba sin instalar o abrir el navegador en Windows.
+Las instrucciones siguientes corresponden al build descargable anterior.
+
 - ZIP: extraer todo a una carpeta propia. `Seiya-Rust-Help.cmd` muestra ayuda y
   mantiene la consola abierta. `seiya-desktop.exe --help`/`--version` funcionan;
   doble clic directo en una consola puede cerrarla al terminar.

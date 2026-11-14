@@ -1,7 +1,7 @@
 //! Explicit local backend transport. Never connects during construction.
 use crate::config::{ConfigError, MAX_CONFIG_BYTES};
 use reqwest::{redirect::Policy, Client, Url};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::future::Future;
 use std::pin::Pin;
@@ -11,7 +11,7 @@ pub const MAX_RUNTIME_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 pub type RuntimeFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Value, TransportError>> + Send + 'a>>;
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeConfig {
     pub id: String,
@@ -22,10 +22,11 @@ pub struct RuntimeConfig {
     pub max_output_tokens: u64,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Backend {
     Mlx,
+    OpenaiLocal,
 }
 
 impl RuntimeConfig {
@@ -101,8 +102,10 @@ impl RuntimeConfig {
 /// Redacted categories only. Never attach reqwest errors, URLs or backend bodies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransportError {
-    /// Send failed while establishing a connection, before dispatch. Never use
-    /// this for response-body failure or ambiguous runtime completion.
+    /// Local validation failed before any generation dispatch.
+    InputRejected,
+    /// No generation dispatched: connection/expected-binding preflight failed.
+    /// Never use this for POST response-body failure or ambiguous completion.
     NotConnected,
     Timeout,
     Unavailable,
@@ -114,6 +117,9 @@ pub enum TransportError {
 impl TransportError {
     pub fn message(self) -> &'static str {
         match self {
+            Self::InputRejected => {
+                "local model input/output budget or capability rejected; nothing dispatched"
+            }
             Self::Timeout => "local model endpoint failed: TimeoutError",
             Self::Unavailable | Self::NotConnected => "local model endpoint failed: URLError",
             Self::HttpFailure => "local model endpoint failed: HTTPError",
@@ -165,35 +171,75 @@ impl HttpTransport {
             endpoint: config.endpoint()?,
         })
     }
+    /// Inventory only. No model loading, retries, proxy, DNS or redirects.
+    pub async fn advertises(&self, model: &str) -> Result<bool, TransportError> {
+        let mut url = self.endpoint.clone();
+        url.set_path("/v1/models");
+        let response = self.client.get(url).send().await.map_err(classify_send)?;
+        let value = read_response(response).await?;
+        let models = value["data"]
+            .as_array()
+            .filter(|v| v.len() <= 256)
+            .ok_or(TransportError::InvalidJson)?;
+        if models.iter().any(|v| {
+            v["id"]
+                .as_str()
+                .is_none_or(|s| s.is_empty() || s.len() > 4096)
+        }) {
+            return Err(TransportError::InvalidJson);
+        }
+        Ok(models.iter().any(|v| v["id"] == model))
+    }
+    pub(crate) fn image(&self, request: Value) -> RuntimeFuture<'_> {
+        Box::pin(async move {
+            let mut url = self.endpoint.clone();
+            url.set_path("/v1/images/generations");
+            let response = self
+                .client
+                .post(url)
+                .json(&request)
+                .send()
+                .await
+                .map_err(classify_send)?;
+            read_response_capped(response, 24 * 1024 * 1024).await
+        })
+    }
+}
+
+async fn read_response(response: reqwest::Response) -> Result<Value, TransportError> {
+    read_response_capped(response, MAX_RUNTIME_RESPONSE_BYTES).await
+}
+async fn read_response_capped(
+    mut response: reqwest::Response,
+    cap: usize,
+) -> Result<Value, TransportError> {
+    if !response.status().is_success() {
+        return Err(TransportError::HttpFailure);
+    }
+    if response.content_length().is_some_and(|n| n > cap as u64) {
+        return Err(TransportError::ResponseTooLarge);
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(classify)? {
+        if chunk.len() > cap.saturating_sub(bytes.len()) {
+            return Err(TransportError::ResponseTooLarge);
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice(&bytes).map_err(|_| TransportError::InvalidJson)
 }
 
 impl RuntimeTransport for HttpTransport {
     fn complete(&self, request: Value) -> RuntimeFuture<'_> {
         Box::pin(async move {
-            let mut response = self
+            let response = self
                 .client
                 .post(self.endpoint.clone())
                 .json(&request)
                 .send()
                 .await
                 .map_err(classify_send)?;
-            if !response.status().is_success() {
-                return Err(TransportError::HttpFailure);
-            }
-            if response
-                .content_length()
-                .is_some_and(|size| size > MAX_RUNTIME_RESPONSE_BYTES as u64)
-            {
-                return Err(TransportError::ResponseTooLarge);
-            }
-            let mut bytes = Vec::new();
-            while let Some(chunk) = response.chunk().await.map_err(classify)? {
-                if chunk.len() > MAX_RUNTIME_RESPONSE_BYTES.saturating_sub(bytes.len()) {
-                    return Err(TransportError::ResponseTooLarge);
-                }
-                bytes.extend_from_slice(&chunk);
-            }
-            serde_json::from_slice(&bytes).map_err(|_| TransportError::InvalidJson)
+            read_response(response).await
         })
     }
 }

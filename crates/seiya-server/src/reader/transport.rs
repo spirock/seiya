@@ -112,12 +112,27 @@ pub async fn fetch(network: &dyn Network, input: &str, deadline: Instant) -> Res
 }
 
 pub async fn fetch_report(network: &dyn Network, input: &str, deadline: Instant) -> Report {
+    fetch_report_with_redirect_limit(network, input, deadline, 2).await
+}
+pub async fn fetch_report_with_redirect_limit(
+    network: &dyn Network,
+    input: &str,
+    deadline: Instant,
+    max_redirects: usize,
+) -> Report {
     let deadline = deadline.min(Instant::now() + Duration::from_secs(45));
     let mut budget = wire::Budget::default();
     let mut get_count = 0;
     let result = timeout_at(
         deadline,
-        fetch_inner(network, input, deadline, &mut budget, &mut get_count),
+        fetch_inner(
+            network,
+            input,
+            deadline,
+            &mut budget,
+            &mut get_count,
+            max_redirects.min(2),
+        ),
     )
     .await
     .unwrap_or(Err(Error::Timeout));
@@ -138,9 +153,10 @@ async fn fetch_inner(
     deadline: Instant,
     budget: &mut wire::Budget,
     get_count: &mut usize,
+    max_redirects: usize,
 ) -> Result<Page, Error> {
     let mut url = policy::url(input)?;
-    for count in 1..=3 {
+    for count in 1..=max_redirects + 1 {
         if Instant::now() >= deadline {
             return Err(Error::Timeout);
         }
@@ -166,7 +182,7 @@ async fn fetch_inner(
             Some(query) => format!("{}?{query}", url.path()),
             None => url.path().to_string(),
         };
-        let request = format!("GET {target} HTTP/1.1\r\nHost: {}\r\nAccept: text/html, text/plain\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n", url.host_str().ok_or(Error::Policy)?);
+        let request = format!("GET {target} HTTP/1.1\r\nHost: {}\r\nUser-Agent: Seiya/0.1\r\nAccept: text/html, text/plain\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n", url.host_str().ok_or(Error::Policy)?);
         let page_deadline = deadline.min(Instant::now() + Duration::from_secs(10));
         *get_count = count;
         timeout_at(page_deadline, stream.write_all(request.as_bytes()))
@@ -178,7 +194,7 @@ async fn fetch_inner(
             .map_err(|_| Error::Timeout)??;
         drop(stream);
         if matches!(reply.status, 301 | 302 | 303 | 307 | 308) {
-            if count == 3 {
+            if count == max_redirects + 1 {
                 return Err(Error::Limit);
             }
             let location = reply.location.ok_or(Error::Format)?;
@@ -295,6 +311,22 @@ mod tests {
         }
     }
     const OK: &str = "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 3\r\n\r\nabc";
+    #[tokio::test]
+    async fn search_policy_zero_redirects_never_contacts_a_second_host() {
+        let redirect="HTTP/1.1 302 Found\r\nLocation: https://other.example.org/search\r\nContent-Length: 0\r\n\r\n";
+        let fake = Fake::new(&[&["8.8.8.8"], &["8.8.4.4"]], &[redirect]);
+        let report = fetch_report_with_redirect_limit(
+            &fake,
+            "https://html.duckduckgo.com/html/?q=synthetic",
+            Instant::now() + Duration::from_secs(1),
+            0,
+        )
+        .await;
+        assert!(matches!(report.result, Err(Error::Limit)));
+        assert_eq!(report.counters.get_count, 1);
+        assert_eq!(fake.targets.lock().unwrap().len(), 1);
+        assert_eq!(fake.resolutions.lock().unwrap().len(), 1);
+    }
 
     #[tokio::test]
     async fn tls_memory_handshake_checks_trust_and_hostname() {

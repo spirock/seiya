@@ -1,5 +1,10 @@
 # Lector experimental · componentes de S4-05
 
+El catálogo local opt-in conecta ahora estos componentes desde web_chat mediante
+PreparedWeb; no publica el endpoint interno read de librería. Ver ADR0065 y
+docs/BACKENDS_LOCALES.md. Los párrafos siguientes describen el constructor S4-05,
+no niegan esa integración nueva. Búsqueda nueva probada solo con fixtures.
+
 Esta librería **no está montada en el router normal ni habilitada por CLI**.
 El constructor explícito `app_with_reader` monta el endpoint de ADR0030 solo
 para integración de librería; requiere clave no vacía y no se usa en el servicio.

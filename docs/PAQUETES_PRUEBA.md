@@ -3,8 +3,25 @@
 Sin pesos, credenciales, sesiones o motores MLX/Ollama/sd.cpp incluidos. No
 instalación, carga de modelos, servicios o permisos automáticos. Artefactos de
 prueba sin firma/notarización; no release autónoma ni paridad completa con Python.
+[Guía de instalación manual y feedback](PRUEBA_INSTALADOR.md). Verificar el SHA
+del build en README/BUILD-INFO.json; no basta con el nombre versión0.1.0.
 
 ## Instaladores Rust nuevos
+
+Fuentes actuales: `--launch` abre primero un asistente web sin motores/perfil,
+con gestor de asignaciones y confirmación. El acceso macOS y el acceso principal
+Windows usan esa entrada; Windows no obtiene backend de inferencia por compartir
+la web. Configurar roles no descarga ni activa variantes no admitidas. El build
+anterior puede usar diálogos macOS y ayuda Windows: elegir el SHA/run actual.
+[Flujo y limitaciones](APP_RUST.md).
+
+Ampliación de texto de las fuentes actuales: catálogo de cerebro/trabajadores
+intercambiables y conector HTTP local externo Windows/Linux/macOS. Incluye ejemplo
+`local-models.example.json`, contrato `LOCAL_MODELS.md` y operación `BACKENDS_LOCALES.md`.
+No inicia ni incluye motores ni acredita GPU/modelos reales por compilar. Incluye
+guías de imagen/chat y residencia nativa, más ejemplos opt-in separados y guía
+de prueba/feedback. Imagen nativa solo macOS. Los enlaces cambian solo después
+de un run completo correcto; nunca asumir que un run incompleto ya se distribuye.
 
 **Windows x64:** añadido pipeline nativo para ZIP con `.exe` y setup.exe per-user.
 Artefactos `seiya-rust-Windows-X64-portable` y `seiya-rust-Windows-X64-installer`;

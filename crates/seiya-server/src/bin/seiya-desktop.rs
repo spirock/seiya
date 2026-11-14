@@ -4,32 +4,49 @@ use std::{path::Path, process::ExitCode};
 #[tokio::main]
 async fn main() -> ExitCode {
     let mut args: Vec<_> = std::env::args_os().skip(1).collect();
-    if let [flag] = args.as_slice() {
-        if flag == "--launch" {
-            #[cfg(target_os = "macos")]
-            return match seiya_server::launcher::launch().await {
+    if let [launch, catalog, path] = args.as_slice() {
+        if launch == "--launch" && catalog == "--catalog" {
+            return match seiya_server::desktop_setup::launch_catalog(Some(path.into())).await {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(e) => {
                     eprintln!("Seiya: {e}");
                     ExitCode::from(1)
                 }
             };
-            #[cfg(not(target_os = "macos"))]
-            {
-                eprintln!("native launcher is macOS-only; no runtime started");
-                return ExitCode::from(1);
-            }
+        }
+    }
+    if let [flag] = args.as_slice() {
+        if flag == "--launch" {
+            return match seiya_server::desktop_setup::launch().await {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("Seiya: {e}");
+                    ExitCode::from(1)
+                }
+            };
         }
         if flag == "--version" {
             println!("seiya-desktop {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
         }
         if flag == "--help" {
-            println!("Seiya Rust experimental\nOffline macOS profile: seiya-desktop --check-config FILE\nmacOS manual host: --serve --config FILE --approval manual-portable-macos-web-no-automatic-inference --listen PRIVATE_IP:8015 --prefix-length BITS --certificate-der FILE --private-key-der FILE [--chat-only]\nNo bundled models/runtime. No automatic inference. Native --serve is macOS-only. On Windows use seiya-server.exe check-config for API configurations; no Windows native inference host is provided.");
+            println!("Seiya Rust experimental\nWeb-first setup/chat shell: seiya-desktop --launch [--catalog ABSOLUTE_FILE]\nOffline local text catalogue: --check-catalog FILE\nCatalogue backend: externally managed local OpenAI-compatible engines on Windows/Linux/macOS; no bundled engine, model downloads or automatic inference. Existing HTML/CSS/JavaScript retained.\nOffline macOS MLX profile: seiya-desktop --check-config FILE\nmacOS manual host: --serve --config FILE --approval manual-portable-macos-web-no-automatic-inference --listen PRIVATE_IP:8015 --prefix-length BITS --certificate-der FILE --private-key-der FILE [--chat-only]\nNative --serve/MLX and pinned images remain macOS-only. Catalogue engines must be prepared and dedicated by the operator; no implicit remote fallback. On Windows use seiya-server.exe check-config for the separate API configuration.");
             return ExitCode::SUCCESS;
         }
     }
     if let [flag, path] = args.as_slice() {
+        if flag == "--check-catalog" {
+            return match seiya_server::local_models::check_file(Path::new(path)) {
+                Ok(report) => {
+                    println!("{}", report);
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    eprintln!("{e}");
+                    ExitCode::from(1)
+                }
+            };
+        }
         if flag == "--check-config" {
             return match seiya_server::desktop_config::check_file(Path::new(path)) {
                 Ok(report) => {

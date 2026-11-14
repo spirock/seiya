@@ -29,6 +29,57 @@ struct Access {
 fn same(a: &str, b: &str) -> bool {
     bool::from(a.as_bytes().ct_eq(b.as_bytes()))
 }
+/// An inert desktop shell needs the same origin/cookie boundary as inference,
+/// but must not construct a model adapter just to display onboarding.
+pub(crate) fn desktop_shell(address: SocketAddr, inner: Router) -> (Router, String, String) {
+    let token = || {
+        format!(
+            "{}{}",
+            uuid::Uuid::new_v4().simple(),
+            uuid::Uuid::new_v4().simple()
+        )
+    };
+    let a = Arc::new(Access {
+        scheme: "http",
+        host: address.to_string(),
+        key: token(),
+        bootstrap: vec![(token(), AtomicBool::new(false))],
+        prefix: format!("/trial/{}", uuid::Uuid::new_v4().simple()),
+    });
+    let link = format!("http://{address}/session/{}", a.bootstrap[0].0);
+    let home = format!("http://{address}{}/", a.prefix);
+    let inner = inner
+        .layer(middleware::from_fn_with_state(
+            a.clone(),
+            shell_authorization,
+        ))
+        .layer(middleware::from_fn_with_state(a.clone(), cookie));
+    let app = Router::new().nest(&format!("{}/", a.prefix), inner).merge(
+        Router::new()
+            .route("/session/{token}", get(bootstrap))
+            .with_state(a),
+    );
+    (app, link, home)
+}
+async fn shell_authorization(State(a): State<Arc<Access>>, r: Request, next: Next) -> Response {
+    let expected = format!("Bearer {}", a.key);
+    if crate::single_header(r.headers(), header::AUTHORIZATION).is_none_or(|v| !same(v, &expected))
+    {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let mut response = next.run(r).await;
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response.headers_mut().insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
+    response
+        .headers_mut()
+        .insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    response
+}
 fn origin(a: &Access, r: &Request) -> bool {
     crate::single_header(r.headers(), header::HOST) == Some(a.host.as_str())
         && (!r.headers().contains_key(header::ORIGIN)
@@ -95,6 +146,7 @@ pub(crate) fn app(
 ) -> Result<(Router, String), ConfigError> {
     configured(address, state, "http")
 }
+#[cfg(any(test, target_os = "macos"))]
 pub(crate) fn lan_tls_app(
     address: SocketAddr,
     state: Arc<PreparedWeb>,

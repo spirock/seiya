@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "minimum_available_mib": 512,
+  "web_search": false,
+  "models": [
+    {
+      "id": "brain-tools",
+      "runtime": {
+        "id": "brain-tools",
+        "model": "REPLACE_WITH_PREPARED_TEXT_BINDING",
+        "backend": "openai_local",
+        "base_url": "http://127.0.0.1:21011/v1",
+        "timeout_seconds": 120,
+        "max_output_tokens": 256
+      },
+      "supports_tools": true,
+      "max_input_bytes": 65536
+    }
+  ],
+  "assignments": { "brain": "brain-tools", "workers": [] },
+  "image_models": [
+    {
+      "id": "image-local",
+      "runtime": {
+        "id": "image-local",
+        "model": "REPLACE_WITH_PREPARED_IMAGE_BINDING",
+        "backend": "openai_local",
+        "base_url": "http://127.0.0.1:21012/v1",
+        "timeout_seconds": 120,
+        "max_output_tokens": 256
+      }
+    }
+  ],
+  "image": "image-local",
+  "image_chat": true
+}

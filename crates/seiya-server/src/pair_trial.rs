@@ -7,7 +7,6 @@ use crate::{
 use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::watch;
-#[cfg(any(target_os = "macos", test))]
 pub(crate) mod access;
 pub mod limits;
 #[cfg(target_os = "macos")]

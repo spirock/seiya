@@ -1,6 +1,8 @@
 //! Discovery by default; JSON chat/buffered SSE require explicit runtime config.
+mod chat_images;
 pub mod config;
 pub mod desktop_config;
+pub mod desktop_setup;
 pub mod diagnostics;
 pub mod image_jobs;
 #[cfg(target_os = "macos")]
@@ -10,12 +12,17 @@ mod job_store;
 pub mod jobs;
 #[cfg(target_os = "macos")]
 pub mod launcher;
+pub mod local_models;
+#[cfg(target_os = "macos")]
+pub(crate) mod managed_residency;
 pub mod pair_trial;
+pub(crate) mod platform;
 pub mod prepared_web;
 pub mod reader;
 pub mod runtime;
 pub mod scheduler;
 mod sse;
+pub mod web_chat;
 #[cfg(target_os = "macos")]
 pub mod web_diagnostics;
 

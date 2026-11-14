@@ -1,6 +1,10 @@
 //! Explicit temporary host: Gemma and images share one slot, never residency.
 use crate::{
     image_jobs::{self, ImageJobs},
+    managed_residency::{
+        Driver as Residency, Lease as ResidencyLease, Phase as ResidencyPhase,
+        Role as ResidencyRole,
+    },
     pair_trial::{
         self,
         limits::{PressureWindow, TrialLimits},
@@ -12,7 +16,7 @@ use crate::{
 use seiya_contracts::image_job::{ImageRequest, ImageStage};
 use seiya_observe::{
     image::{
-        coordination::{Coordination, ModelLease},
+        coordination::{Coordination, ModelLease, NativeOperation},
         job::{self, Environment, Permission, RuntimeFiles},
         native,
     },
@@ -27,12 +31,12 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
-        atomic::{AtomicBool, AtomicU8, Ordering},
+        atomic::{AtomicBool, Ordering},
         Arc,
     },
     time::{Duration, Instant},
 };
-use tokio::sync::{watch, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::watch;
 
 pub const APPROVAL: &str = "temporary-real-gemma-and-images-sequential-web";
 pub const GEMMA_SMOKE_APPROVAL: &str = "one-isolated-gemma-e2b-response-with-memory-guards";
@@ -57,7 +61,7 @@ pub async fn gemma_smoke(root: &Path) -> Result<Value, String> {
         pair_trial::native::stage(&root.join("models"),&source,FOREGROUND,pair_trial::native::DIGESTS[0])?;
         drop(lease);
         let settings=crate::diagnostics::Diagnostics::memory(Arc::new(native::memory));report["limits"]=serde_json::to_value(settings.limits()).map_err(|_|"smoke_limits")?;
-        let session=Arc::new(Session{feature_controlled:false,multiagent_configured:false,images_enabled:false,settings,until:Instant::now()+Duration::from_secs(180),enabled:AtomicBool::new(true),failed:AtomicBool::new(false),phase:AtomicU8::new(0),slot:Arc::new(Semaphore::new(1))});
+        let session=Arc::new(Session{feature_controlled:false,multiagent_configured:false,images_enabled:false,settings,until:Instant::now()+Duration::from_secs(180),enabled:AtomicBool::new(true),failed:AtomicBool::new(false),residency:Residency::new()});
         let chat=Chat{model:FOREGROUND,session:session.clone(),root:root.to_owned(),source,binary:pair_trial::native::OLLAMA.into(),environment:Environment::legacy()};
         let mut interrupt=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).map_err(|_|"smoke_signal")?;let mut term=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).map_err(|_|"smoke_signal")?;
         report["turn_attempted"]=json!(true);
@@ -103,49 +107,59 @@ struct Session {
     until: Instant,
     enabled: AtomicBool,
     failed: AtomicBool,
-    phase: AtomicU8,
-    slot: Arc<Semaphore>,
+    residency: Arc<Residency>,
 }
 impl Session {
     fn live(&self) -> bool {
         self.enabled.load(Ordering::Acquire)
+            && self.residency.snapshot().phase != ResidencyPhase::Quarantined
             && !self.settings.storage_failed()
             && !self.failed.load(Ordering::Acquire)
             && Instant::now() < self.until
     }
     fn stop(&self) {
         self.enabled.store(false, Ordering::Release);
+        self.residency.stop();
     }
     fn fail(&self) {
         self.failed.store(true, Ordering::Release);
-        self.slot.close();
+        self.residency.quarantine();
     }
     async fn acquire(self: &Arc<Self>, phase: u8) -> Result<Turn, TransportError> {
         if !self.live() {
             return Err(TransportError::NotConnected);
         }
-        let permit =
-            tokio::time::timeout(Duration::from_secs(30), self.slot.clone().acquire_owned())
-                .await
-                .map_err(|_| TransportError::NotConnected)?
-                .map_err(|_| TransportError::NotConnected)?;
+        let lease = tokio::time::timeout(
+            Duration::from_secs(30),
+            self.residency
+                .acquire(ResidencyRole::from_code(phase).ok_or(TransportError::NotConnected)?),
+        )
+        .await
+        .map_err(|_| TransportError::NotConnected)?
+        .map_err(|_| TransportError::NotConnected)?;
         if !self.live() {
             return Err(TransportError::NotConnected);
         }
-        self.phase.store(phase, Ordering::Release);
         Ok(Turn {
             session: self.clone(),
-            _permit: permit,
+            lease: Some(lease),
             confirmed: false,
         })
     }
 }
 struct Turn {
     session: Arc<Session>,
-    _permit: OwnedSemaphorePermit,
+    lease: Option<ResidencyLease>,
     confirmed: bool,
 }
 impl Turn {
+    fn advance(&self, phase: ResidencyPhase) -> Result<(), TransportError> {
+        self.lease
+            .as_ref()
+            .ok_or(TransportError::Unavailable)?
+            .advance(phase)
+            .map_err(|_| TransportError::Unavailable)
+    }
     fn confirm(&mut self) {
         self.confirmed = true;
     }
@@ -155,7 +169,11 @@ impl Drop for Turn {
         if !self.confirmed {
             self.session.fail();
         }
-        self.session.phase.store(0, Ordering::Release);
+        if self.confirmed {
+            if let Some(lease) = self.lease.take() {
+                lease.confirm_cleanup();
+            }
+        }
     }
 }
 impl Permission for Session {
@@ -190,6 +208,9 @@ impl image_jobs::Admission for Session {
     }
 }
 impl HostGate for Session {
+    fn residency_status(&self) -> Option<Value> {
+        serde_json::to_value(self.residency.snapshot()).ok()
+    }
     fn multiagent_enabled(&self) -> bool {
         self.live() && self.multiagent_configured && self.settings.features().multiagent
     }
@@ -197,13 +218,13 @@ impl HostGate for Session {
         f == FOREGROUND
             && (a.is_empty() || a == AUXILIARY && self.multiagent_configured)
             && self.live()
-            && self.phase.load(Ordering::Acquire) != 2
+            && self.residency.role_code() != 2
     }
     fn status(&self) -> Option<&'static str> {
         Some(if !self.live() {
             "Sesión finalizada o detenida; no se cargarán modelos."
         } else {
-            match self.phase.load(Ordering::Acquire) {
+            match self.residency.role_code() {
                 1 => "Gemma real: carga/consulta y descarga confirmada por turno.",
                 2 => "Imagen local en curso; chat conservado, temporalmente ocupado.",
                 3 => "Qwen prepara un borrador por turnos; no ejecuta código ni escribe archivos.",
@@ -233,6 +254,7 @@ impl image_jobs::Executor for Images {
         stage: watch::Sender<ImageStage>,
     ) -> image_jobs::Work {
         let session = self.session.clone();
+        let mut stages = stage.subscribe();
         let work = self.native.generate(r, cancel.clone(), stage);
         Box::pin(async move {
             let mut turn = tokio::select! {t=session.acquire(2)=>t.map_err(|_|image_jobs::Failure::Blocked)?,_=cancel.changed()=>return Err(image_jobs::Failure::Cancelled)};
@@ -240,7 +262,19 @@ impl image_jobs::Executor for Images {
                 turn.confirm();
                 return Err(image_jobs::Failure::Cancelled);
             }
-            let result = work.await;
+            turn.advance(ResidencyPhase::Loading)
+                .map_err(|_| image_jobs::Failure::Blocked)?;
+            tokio::pin!(work);
+            let mut stage_open = true;
+            let result = loop {
+                tokio::select! {
+                    result=&mut work=>break result,
+                    changed=stages.changed(),if stage_open=>{
+                        if changed.is_err(){stage_open=false;}else if *stages.borrow_and_update()==ImageStage::Running && session.residency.snapshot().phase==ResidencyPhase::Loading {let _=turn.advance(ResidencyPhase::Running);}
+                    }
+                }
+            };
+            let _ = turn.advance(ResidencyPhase::Unloading);
             if result == Err(image_jobs::Failure::Uncertain) {
                 session.fail();
             }
@@ -265,6 +299,7 @@ struct ChatOwner {
     session: Arc<Session>,
     finished: bool,
     spawn_uncertain: bool,
+    intent: Option<NativeOperation>,
 }
 impl ChatOwner {
     fn finish(&mut self) -> Result<(), TransportError> {
@@ -282,6 +317,12 @@ impl ChatOwner {
         } else {
             Ok(json!({"confirmed":true,"spawned":false}))
         };
+        let result = result.and_then(|v| {
+            if let Some(intent) = self.intent.take() {
+                intent.confirm()?;
+            }
+            Ok(v)
+        });
         match result {
             Ok(v) => {
                 if save(&self.root, "cleanup.json", &v).is_err() {
@@ -345,6 +386,10 @@ async fn inventory(port: u16) -> Result<Value, TransportError> {
 }
 impl Chat {
     async fn turn(&self, input: Value) -> Result<Value, TransportError> {
+        // Admit complete native schema/history BEFORE lease, staging or spawn,
+        // including worker drafts that do not pass through browser preflight.
+        pair_trial::request(input.clone(), self.model)
+            .map_err(|_| TransportError::InputRejected)?;
         let mut turn = self
             .session
             .acquire(if self.model == AUXILIARY { 3 } else { 1 })
@@ -375,6 +420,7 @@ impl Chat {
             session: self.session.clone(),
             finished: false,
             spawn_uncertain: false,
+            intent: None,
         };
         let start = Instant::now();
         let baseline = native::memory()["swap_bytes"]
@@ -400,6 +446,8 @@ impl Chat {
                 .env("OLLAMA_MAX_LOADED_MODELS","1").env("OLLAMA_NUM_PARALLEL","1").env("OLLAMA_CONTEXT_LENGTH","4096").env("OLLAMA_KEEP_ALIVE","30m").env("OLLAMA_LOAD_TIMEOUT","120s").env("OLLAMA_DEBUG","0")
                 .current_dir(&root).stdin(Stdio::null()).stdout(log.try_clone().map_err(|_|TransportError::Unavailable)?).stderr(log);
             if !self.session.live(){return Err(TransportError::NotConnected);}
+            turn.advance(ResidencyPhase::Loading)?;
+            owner.intent=Some(owner.lease.as_ref().ok_or(TransportError::Unavailable)?.begin_native("ollama").map_err(|_|TransportError::Unavailable)?);
             owner.spawn_uncertain=true;owner.child=Some(OwnedChild::spawn(&mut command).map_err(|_|TransportError::Unavailable)?);owner.spawn_uncertain=false;
             save(&root,"owner.json",&json!({"pid":owner.child.as_ref().unwrap().pid(),"port":port,"inference_requested":false})).map_err(|_|TransportError::Unavailable)?;
             let mut pressure=PressureWindow::new(0);
@@ -411,6 +459,7 @@ impl Chat {
             }
             if !inventory(port).await?["models"].as_array().is_some_and(Vec::is_empty){return Err(TransportError::Unavailable);}
             let chat=NativeChat::new(port,self.model)?;
+            turn.advance(ResidencyPhase::Running)?;
             save(&root,"attempt.json",&json!({"inference_requested":true,"model":self.model})).map_err(|_|TransportError::Unavailable)?;
             let work=chat.complete(input);tokio::pin!(work);
             let answer=loop{tokio::select!{
@@ -420,6 +469,7 @@ impl Chat {
             self.check(&mut owner,&mut pressure,&limits,deadline,start,baseline,&log_path,&mut samples)?;
             answer
         }.await;
+        let _ = turn.advance(ResidencyPhase::Unloading);
         let cleanup = owner.finish();
         let saved = save(
             &root,
@@ -686,6 +736,8 @@ pub async fn portable(
 pub(crate) struct DesktopControl {
     pub ready: tokio::sync::oneshot::Sender<crate::launcher::Ready>,
     pub stop: watch::Receiver<bool>,
+    pub mount: Option<tokio::sync::oneshot::Sender<axum::Router>>,
+    pub setup_home: Option<String>,
 }
 pub(crate) async fn desktop(
     profile: &[u8],
@@ -768,6 +820,7 @@ async fn run_mode(
     mut desktop: Option<DesktopControl>,
 ) -> Result<(), String> {
     let local = desktop.is_some();
+    let chat_images = portable.as_ref().is_some_and(|p| p.config.chat_images) && !gemma_only;
     if desktop.as_ref().is_some_and(|d| *d.stop.borrow()) {
         return Err("desktop_start_cancelled".into());
     }
@@ -794,7 +847,12 @@ async fn run_mode(
     let auxiliary_configured = if !evaluation {
         false
     } else if let Some(p) = &portable {
-        optional_auxiliary(&p.config.model_store, p.config.features.multiagent)?
+        if desktop.as_ref().is_some_and(|d| d.setup_home.is_some()) && !p.config.features.multiagent
+        {
+            false
+        } else {
+            optional_auxiliary(&p.config.model_store, p.config.features.multiagent)?
+        }
     } else {
         true
     };
@@ -869,8 +927,7 @@ async fn run_mode(
         settings: settings.clone(),
         enabled: AtomicBool::new(true),
         failed: AtomicBool::new(false),
-        phase: AtomicU8::new(0),
-        slot: Arc::new(Semaphore::new(1)),
+        residency: Residency::new(),
     });
     let _stop_on_drop = StopOnDrop(session.clone());
     let preflight_lease = if gemma_only {
@@ -1013,6 +1070,11 @@ async fn run_mode(
     } else {
         state
     };
+    let state = if chat_images {
+        state.with_chat_images().map_err(|_| "native_chat_images")?
+    } else {
+        state
+    };
     let state = state
         .with_diagnostics(settings)
         .map_err(|_| "host_diagnostics")?;
@@ -1023,10 +1085,20 @@ async fn run_mode(
     } else {
         state
     };
-    let tcp = tokio::net::TcpListener::bind(config.address)
-        .await
-        .map_err(|_| "host_port_busy_no_adoption")?;
-    let address = tcp.local_addr().map_err(|_| "host_address")?;
+    if let Some(home) = desktop.as_ref().and_then(|d| d.setup_home.clone()) {
+        state.desktop_setup_home(home);
+    }
+    let mounted = desktop.as_ref().is_some_and(|d| d.mount.is_some());
+    let tcp = if mounted {
+        None
+    } else {
+        Some(
+            tokio::net::TcpListener::bind(config.address)
+                .await
+                .map_err(|_| "host_port_busy_no_adoption")?,
+        )
+    };
+    let address = config.address;
     let (app, link, probe) = if local {
         let (a, l) =
             pair_trial::access::app(address, state.clone()).map_err(|_| "desktop_access")?;
@@ -1066,16 +1138,24 @@ async fn run_mode(
     if desktop.as_ref().is_some_and(|d| *d.stop.borrow()) {
         return Err("desktop_start_cancelled".into());
     }
-    let mut web = if let Some(acceptor) = acceptor {
+    let mut web = if mounted {
+        desktop
+            .as_mut()
+            .and_then(|d| d.mount.take())
+            .ok_or("desktop_mount_missing")?
+            .send(app)
+            .map_err(|_| "desktop_shell_closed")?;
+        tokio::spawn(std::future::pending::<std::io::Result<()>>())
+    } else if let Some(acceptor) = acceptor {
         let listener = TlsListener {
-            tcp,
+            tcp: tcp.ok_or("host_listener_missing")?,
             acceptor,
             host,
             prefix: config.prefix,
         };
         tokio::spawn(async move { axum::serve(listener, app).await })
     } else {
-        tokio::spawn(async move { axum::serve(tcp, app).await })
+        tokio::spawn(async move { axum::serve(tcp.unwrap(), app).await })
     };
     struct AbortWeb(tokio::task::AbortHandle);
     impl Drop for AbortWeb {
@@ -1135,7 +1215,7 @@ async fn run_mode(
         true
     };
     let chat_drained = tokio::time::timeout(Duration::from_secs(15), async {
-        while session.slot.available_permits() != 1 {
+        while !session.residency.idle() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     })
@@ -1236,21 +1316,20 @@ mod tests {
             until: Instant::now() + Duration::from_secs(60),
             enabled: AtomicBool::new(true),
             failed: AtomicBool::new(false),
-            phase: AtomicU8::new(0),
-            slot: Arc::new(Semaphore::new(1)),
+            residency: Residency::new(),
         })
     }
     #[tokio::test]
     async fn modalities_share_one_slot_and_release_only_after_turn() {
         let s = session();
         let mut chat = s.acquire(1).await.unwrap();
-        assert!(s.slot.clone().try_acquire_owned().is_err());
-        assert_eq!(s.phase.load(Ordering::Acquire), 1);
+        assert!(!s.residency.idle());
+        assert_eq!(s.residency.role_code(), 1);
         chat.confirm();
         drop(chat);
         let mut image = s.acquire(2).await.unwrap();
         assert!(!s.admits(FOREGROUND, ""));
-        assert!(s.slot.clone().try_acquire_owned().is_err());
+        assert!(!s.residency.idle());
         image.confirm();
         drop(image);
         assert!(s.admits(FOREGROUND, ""));
@@ -1273,8 +1352,7 @@ mod tests {
             until: Instant::now(),
             enabled: AtomicBool::new(true),
             failed: AtomicBool::new(false),
-            phase: AtomicU8::new(0),
-            slot: Arc::new(Semaphore::new(1)),
+            residency: Residency::new(),
         });
         assert!(s.acquire(1).await.is_err());
     }
@@ -1285,6 +1363,52 @@ mod tests {
         drop(turn);
         assert!(!s.live());
         assert!(s.acquire(2).await.is_err());
+    }
+    #[tokio::test]
+    async fn native_context_rejection_precedes_shared_inventory_files_and_spawn() {
+        let root =
+            std::env::temp_dir().join(format!("seiya-no-native-dispatch-{}", uuid::Uuid::new_v4()));
+        let session = session();
+        let chat = Chat {
+            model: FOREGROUND,
+            session: session.clone(),
+            root: root.clone(),
+            source: root.join("absent-models"),
+            binary: root.join("absent-binary"),
+            environment: Environment::legacy(),
+        };
+        let error = chat
+            .turn(
+                json!({"model":FOREGROUND,"messages":[{"role":"user","content":"x".repeat(4000)}]}),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error, TransportError::InputRejected);
+        assert!(!root.exists());
+        assert!(session.live());
+        assert_eq!(session.residency.snapshot().phase, ResidencyPhase::Idle);
+    }
+    #[tokio::test]
+    async fn residency_diagnostics_report_owned_cleanup_not_free_physical_memory() {
+        let s = session();
+        let before = s.residency_status().unwrap();
+        assert_eq!(before["phase"], "idle");
+        assert_eq!(before["owned_cleanup_confirmed"], true);
+        assert_eq!(before["physical_memory_release_measured"], false);
+        let mut turn = s.acquire(1).await.unwrap();
+        turn.advance(ResidencyPhase::Loading).unwrap();
+        assert_eq!(
+            s.residency_status().unwrap()["owned_cleanup_confirmed"],
+            false
+        );
+        turn.advance(ResidencyPhase::Unloading).unwrap();
+        turn.confirm();
+        drop(turn);
+        assert_eq!(s.residency_status().unwrap()["role"], Value::Null);
+        assert_eq!(
+            s.residency_status().unwrap()["owned_cleanup_confirmed"],
+            true
+        );
     }
     #[test]
     fn lan_peer_filter_is_explicit_ipv4_subnet_not_all_private_networks() {

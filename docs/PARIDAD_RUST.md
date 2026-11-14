@@ -8,7 +8,8 @@ y funciones ausentes; no convierten pruebas de fixtures en validación de dispos
 
 | Área | Rust actual | Evidencia/límite |
 |---|---|---|
-| Launcher macOS | Diálogos, configurar/elegir JSON, revisar paths, confirmar inicio, abrir web y parar | UI/browser/host inyectados en tests; GUI real pendiente |
+| Launcher macOS (fuentes nuevas) | Web primero sin perfil/motor; detección, revisión/confirmación y parada desde asistente | HTTP/DOM/filesystem sintéticos; GUI/inferencia real pendientes; build enlazado anterior usa diálogos |
+| Gestor de modelos | Catálogo de texto: cerebro/trabajadores sustituibles y pool secuencial; ruta MLX/imágenes anterior separada | HTTP/bindings/recursos/locks/journal y CAS probados con fixtures; no catálogo universal o downloader |
 | Diseño web | HTML/CSS existentes, JS de controles/historial añadido | CSS igual bajo cookie loopback, suites DOM; no rediseño |
 | API `/v1/models`, chat/tools JSON | Implementada, worker/cola/límites | Fixtures compartidas y ensayos OpenCode anteriores; diferencias de schemas documentadas, no paridad absoluta |
 | Streaming | SSE bufferizado | No tokens vivos; no prometerlo por abrir navegador |
@@ -21,7 +22,7 @@ y funciones ausentes; no convierten pruebas de fixtures en validación de dispos
 | Buscar/navegar desde conversación | Sin paridad completa con Python | Reader Rust separado no es una tool activa del perfil Gemma por prosa |
 | Consenso completo/herramientas SO | Sin paridad/pendiente según componente | No inventar capacidades; herramientas OpenCode no se ejecutan dos veces |
 | Instalación, firma y actualización | Artefactos experimentales | CI inspecciona sin instalar; Gatekeeper/SmartScreen/dispositivo pendientes |
-| Windows/Linux | CLI/API, no launcher nativo macOS | Builds propios; no inferencia/imagen nativa validada por paquete |
+| Windows/Linux (fuentes nuevas) | Shell y catálogo de texto con conectores HTTP locales externos; roles persistidos tras confirmar | Código Rust y fixtures; motor externo ya preparado/dedicado, sin ejecutar binarios o imágenes; builds/GUI/inferencia reales por SO pendientes |
 
 ## Historial al abrir el launcher local
 

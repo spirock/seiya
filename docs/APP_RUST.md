@@ -1,12 +1,108 @@
 # Aplicación Rust · avance y operación
 
+Incremento local de residencia nativa: [lifecycle macOS](RESIDENCIA_NATIVA.md).
+Ollama y generador de imagen propios comparten driver secuencial; cierre de árbol
+e intención durable antes de spawn, sin certificar VRAM liberada. chat_images
+opt-in permite usar el panel de imágenes desde el chat nativo con límite3584bytes
+intacto. Perfiles viejos siguen manuales hasta revisión. Verificado con fixtures,
+no modelos reales nuevos ni instalación acreditada; comprobar el SHA del paquete.
+
 Estado y próximos hitos: [hoja de ruta pública](../ROADMAP.md).
 Objetivo: launcher/coordinador Rust, mismo diseño web y motores/adaptadores
 adecuados a cada plataforma. No reescritura obligatoria de HTML/JS o inferencia.
 
-## Launcher macOS (M3 · pruebas offline)
+## Incremento de texto portable · fuentes actuales
 
-La nueva Seiya Rust.app invoca `seiya-desktop --launch`: menú nativo **Configurar**
+Catálogo sustituible de cerebro/trabajadores y backend HTTP local externo en Rust,
+con selección secuencial, binding verificado, locks/journal y recursos. Disponible
+por `--launch [--catalog RUTA_ABSOLUTA]` y `--check-catalog FILE`; comprobar que el
+build descargado corresponda al snapshot actual. [Operación y límites](BACKENDS_LOCALES.md).
+Windows/Linux dejan de limitarse al borrador de roles **si se prepara el catálogo y
+motor externo**. Sin catálogo, el asistente explica lo que falta y no genera.
+macOS sin catálogo conserva MLX pinned y chat de imagen opt-in. Imagen por API
+HTTP tiene otro catálogo experimental con PNG nativo macOS; no validación de GPU
+ni imágenes nativas Windows/Linux. [Imágenes desde chat](IMAGENES_DESDE_CHAT.md).
+
+**HTML/CSS/JavaScript y diseño se conservan permanentemente**: este incremento no
+modifica los seis assets congelados. Por eso permanecen algunas etiquetas heredadas
+macOS/Ollama; la advertencia HTTP y el binding efectivo describen el backend nuevo.
+No hay inferencia/instalación/GPU real de Windows/Linux acreditadas por sus fixtures.
+
+Las secciones siguientes registran el asistente y las limitaciones del incremento
+anterior; donde indican «backend ausente» o «solo IDs en navegador», el catálogo de
+texto nuevo amplía ese alcance, no el backend de imágenes ni los perfiles MLX.
+
+## Asistente web primero (fuentes actuales · experimental)
+
+`seiya-desktop --launch` abre la web común en `127.0.0.1:8015` **sin necesitar
+desktop.json, motores ni modelos**. No ejecuta inferencia al abrir. Se conserva el
+HTML/CSS del chat; hasta configurar, el compositor está desactivado y aparece el
+asistente. No hay menú inicial para elegir un JSON o un ejecutable.
+
+1. Detectar instalaciones/perfil: observa rutas conocidas de Ollama y el almacén
+   MLX, sin ejecutar programas ni buscar documentos personales.
+2. Editar rutas o usar los selectores de macOS desde botones de la web.
+3. Asignar cerebro, pipeline de imágenes y grupo de trabajadores. Los IDs son
+   editables; no conceden compatibilidad, descarga, ejecución de código o red.
+4. Revisar: prepara carpetas privadas propias y valida filesystem. Muestra los
+   valores/efectos exactos; aún no guarda el perfil ni inicia motores.
+5. Confirmar **guardar sin iniciar** o **guardar e iniciar**. Una aprobación es de
+   un uso y contiene bytes inmutables; no se reenvía tras un error de conexión.
+6. Tras ready, Abrir chat usa bootstrap de un uso. En el chat, **Configurar modelos**
+   vuelve al asistente. Detener motores espera cleanup; después pueden cambiarse
+   asignaciones y volver a revisar/iniciar.
+
+**Persistencia:** `~/Library/Application Support/Seiya/desktop-manager.json`
+contiene versión1, perfil completo y configuración/asignaciones, con modo600 y guardado atómico
+comparado contra baseline bajo lock. El `desktop.json` anterior no se modifica:
+se ofrece como importación al no existir el nuevo documento y sigue siendo
+rollback para `--serve`. Se conservan también data/coordination personalizados
+del perfil migrado; el documento nuevo conserva esas rutas aunque se retire el
+perfil anterior. La baseline enviada a la web es un hash, no los bytes del perfil.
+Data/coordination e historial no cambian. No se corrigen
+permisos de carpetas existentes automáticamente; el error aparece en la web.
+
+**Gestor frente a ejecución:** permite sustituir y guardar IDs de cerebro, imágenes
+y hasta16 trabajadores únicos. El adaptador macOS solo ejecuta hoy Gemma
+`gemma4:e2b-mlx`, cero/un auxiliar `qwen3.5:9b-mlx` y el pipeline opcional
+`qwen-image-2.1-turbo-q4`. Otros IDs/pools se conservan pero su activación está
+bloqueada; no hay fallback ni carga simultánea implícita. Elegir un ID no descarga
+pesos ni valida tokenizador/tools/runtime. Imágenes requieren sd-cli y los tres
+assets exactos del ensayo, no solo el denoiser. Guardas/pins/inventario11434 y
+lease/cuarentena anteriores permanecen; iniciar puede fallar por ellas.
+
+**Windows/Linux:** comparten el shell/asistente web con `--launch`, no el backend
+de inferencia macOS. La web indica que el adaptador falta y bloquea revisión del
+motor/inicio; no hay selector nativo equivalente ni guardado de perfil runtime en
+esos sistemas. **Guardar asignaciones en este navegador** conserva únicamente
+los IDs en `seiya.desktop.roles.v1` de localStorage, sin rutas y sin activarlos.
+Ese borrador es local al navegador/origen, no un modelo instalado ni sincronización.
+Windows tiene acceso directo web y `Seiya-Rust.cmd`; Ayuda sigue disponible.
+
+Cerrar una pestaña no detiene el proceso: usar **Cerrar Seiya** o la señal de cierre
+del proceso propio. La sesión caduca a30min; al cerrar/caducar se revoca admisión y
+se espera cleanup, sin matar procesos ajenos ni limpiar cuarentenas. El servidor
+shell posee8015; el router del host se monta en él con su propia autenticación,
+sin cambiar origen ni adoptar otro servidor. No exposición LAN o remoto.
+
+HTTP/DOM/adaptadores y persistencia se prueban con fixtures: no equivalen a abrir
+Finder, instalar la app, probar Windows real o cargar modelos desde este flujo.
+Los enlaces Actions del README siguen apuntando al build anterior hasta publicar
+y completar un nuevo run; no atribuir el asistente nuevo al DMG anterior.
+[Decisión y rollback](decisions/0063-asistente-web-desktop.md).
+
+Comprobación offline del incremento: `make test` (438 Rust,192 Python y4 suites
+Node correctas;24 ignored), `cargo fmt --all -- --check`, `cargo clippy --workspace
+--all-targets --locked -- -D warnings` y `git diff --check` correctos. Incluye
+esquema del gestor, conflictos de baseline, permisos/symlinks, rutas de historial
+personalizadas, cookies de shell/runtime independientes, shutdown durante inicio
+y confirmación pendiente, variantes no admitidas y ausencia de reenvío POST.
+El target Windows no está instalado en el entorno de validación: no se acredita
+cross-build/GUI Windows del cambio; pruebas de su payload usan PE sintéticos.
+
+## Launcher de diálogos anterior (build publicado `1d49370`)
+
+El build anterior de Seiya Rust.app invoca `seiya-desktop --launch`: menú nativo **Configurar**
 o **Abrir perfil**. Configurar selecciona ejecutable LLM compatible y almacén
 existentes, opcionalmente sd-cli/assets ya preparados. No descarga pesos ni elige
 otro proveedor. Elegir carpetas ocultas o dentro de .app puede requerir Ir a carpeta

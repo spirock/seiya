@@ -1,8 +1,12 @@
 # ADR0062 · cerebro, imágenes y grupo de trabajadores sustituibles
 
-Estado: requisito de producto; diseño técnico pendiente.
-No implementado ni integrado todavía en el launcher. No modifica interfaces v1,
-tags/pins del ensayo o permisos de descarga/carga/ejecución.
+Estado: gestor de asignaciones integrado en el asistente web de las fuentes
+actuales (ADR0063), con persistencia y bloqueo de variantes no admitidas. El
+catálogo de texto y adaptador HTTP local sustituible tienen implementación
+experimental (ADR0064), con pool secuencial. Pipeline de imágenes portable,
+residencia adaptativa y validación de modelos/dispositivos reales siguen
+pendientes. No modifica interfaces v1, tags/pins del ensayo o permisos de
+descarga/carga/ejecución. No incluido todavía en el build publicado anterior.
 
 ## Decisión de producto
 

@@ -12,7 +12,18 @@ pub struct SourceText {
 /// Character budget only. The caller must still apply the real tokenizer and
 /// reserve system/history/tools/output tokens; this is not context admission.
 pub fn select(request: &Request, response: &[u8], ids: &[&str]) -> Result<Vec<SourceText>, Error> {
+    select_capped(request, response, ids, 8000)
+}
+pub fn select_capped(
+    request: &Request,
+    response: &[u8],
+    ids: &[&str],
+    per_source: usize,
+) -> Result<Vec<SourceText>, Error> {
     validate_response(request, response, true).map_err(|_| Error::Format)?;
+    if !(1..=8000).contains(&per_source) {
+        return Err(Error::Policy);
+    }
     if ids.is_empty() || ids.len() > 3 {
         return Err(Error::Policy);
     }
@@ -34,7 +45,7 @@ pub fn select(request: &Request, response: &[u8], ids: &[&str]) -> Result<Vec<So
             return Err(Error::NoText);
         }
         let input = page["text"].as_str().ok_or(Error::Format)?;
-        let cap = remaining.min(8000);
+        let cap = remaining.min(per_source);
         if cap == 0 {
             return Err(Error::Limit);
         } // Do not silently drop a selected source.
@@ -110,5 +121,10 @@ mod tests {
             select(&request, &response, &["a", "b", "c"]),
             Err(Error::Limit)
         ));
+        let capped = select_capped(&request, &response, &["a", "b", "c"], 4000).unwrap();
+        assert_eq!(capped.len(), 3);
+        assert!(capped
+            .iter()
+            .all(|s| s.text_truncated && s.text.chars().count() == 4000));
     }
 }

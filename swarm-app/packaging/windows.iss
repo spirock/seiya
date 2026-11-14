@@ -39,6 +39,16 @@ Source: "{#StageDir}\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignorever
 Source: "{#StageDir}\server.discovery.example.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StageDir}\BUILD-INFO.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StageDir}\Seiya-Rust-Help.cmd"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#StageDir}\Seiya-Rust.cmd"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#StageDir}\local-models.example.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#StageDir}\LOCAL_MODELS.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#StageDir}\BACKENDS_LOCALES.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#StageDir}\IMAGENES_DESDE_CHAT.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#StageDir}\RESIDENCIA_NATIVA.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#StageDir}\PRUEBA_INSTALADOR.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#StageDir}\desktop-chat-images.example.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#StageDir}\local-models-images.example.json"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
+Name: "{autoprograms}\Seiya Rust Experimental"; Filename: "{app}\seiya-desktop.exe"; Parameters: "--launch"; WorkingDir: "{app}"
 Name: "{autoprograms}\Seiya Rust Experimental - Ayuda"; Filename: "{app}\Seiya-Rust-Help.cmd"; WorkingDir: "{app}"

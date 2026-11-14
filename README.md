@@ -22,15 +22,17 @@ Repositorio público: [spirock/seiya](https://github.com/spirock/seiya).
 Actions actualiza este bloque al completar correctamente un nuevo build de `main`.
 GitHub entrega los artefactos envueltos en ZIP, puede requerir iniciar sesión y
 los enlaces caducan según su retención. No son releases firmadas ni incluyen modelos.
-Windows/Linux son CLI/API experimentales, no la web/inferencia nativa macOS.
+Windows/Linux comparten shell web y catálogo HTTP experimental; no incluyen la
+inferencia nativa macOS ni motores. [Prueba del instalador y feedback](docs/PRUEBA_INSTALADOR.md).
 [Requisitos y límites](docs/PAQUETES_PRUEBA.md) · [Windows](docs/WINDOWS_RUST.md).
 
 ![Capas de Seiya: experiencia web, coordinación Rust y adaptadores locales](docs/assets/seiya-arquitectura.svg)
 
 ## Funciones por sistema operativo
 
-Esta tabla describe los **paquetes Rust**, no el prototipo Python ni una promesa
-de paridad. El bloque Descargas identifica el build verificado que se ofrece.
+Esta tabla describe las **fuentes Rust actuales**, no el prototipo Python ni una
+promesa de paridad. El bloque Descargas identifica el SHA/run verificado del
+paquete ofrecido; un build anterior puede no contener las funciones nuevas.
 **✅ disponible/comprobado en el alcance indicado · 🧪 implementado experimental,
 con validación limitada · ❌ no disponible en ese paquete.**
 
@@ -39,15 +41,19 @@ con validación limitada · ❌ no disponible en ese paquete.**
 | Paquete generado en Actions | ✅ `.dmg` / `.pkg` | ✅ `.deb` | ✅ instalador `.exe` / ZIP |
 | CLI: ayuda, versión y validación de configuración | ✅ | ✅ | ✅ |
 | API local experimental | 🧪 | 🧪 | 🧪 |
+| Integración con OpenCode mediante API compatible parcial | 🧪 ensayos aislados anteriores | 🧪 contratos/mocks | 🧪 contratos/mocks |
 | Launcher con diálogos para configurar/abrir perfil | 🧪 | ❌ | ❌ |
-| Servidor de interfaz web incluido en el perfil nativo | 🧪 | ❌ | ❌ |
+| Shell web de configuración sin modelos y detección Ollama | 🧪 | 🧪 fixtures | 🧪 fixtures |
+| Catálogo de cerebro/trabajadores y motor HTTP externo | 🧪 | 🧪 contratos/mocks | 🧪 contratos/mocks |
+| Búsqueda web integrada opt-in | 🧪 fixtures | 🧪 fixtures | 🧪 fixtures |
 | Chat local con modelo del ensayo | 🧪 Gemma | ❌ | ❌ |
 | Configuración visual de imágenes/multiagente | 🧪 | ❌ | ❌ |
 | Generación local de imágenes | 🧪 pipeline Qwen-Image | ❌ | ❌ |
 | Trabajador auxiliar de borradores por turnos | 🧪 Qwen | ❌ | ❌ |
-| Historial del chat en el navegador | 🧪 mismo origen | ❌ | ❌ |
+| Historial del chat en el navegador | 🧪 mismo origen | 🧪 contrato común | 🧪 contrato común |
 | Recuperación de trabajos/PNG sin regenerar | 🧪 | ❌ | ❌ |
-| Gestor para sustituir cerebro/imágenes/grupo de trabajadores | ❌ pendiente | ❌ pendiente | ❌ pendiente |
+| Gestor de asignaciones del catálogo de texto | 🧪 | 🧪 | 🧪 |
+| Imágenes desde chat y lifecycle nativo secuencial | 🧪 fixtures | ❌ | ❌ |
 | Modelos/pesos incluidos o descargados automáticamente | ❌ | ❌ | ❌ |
 | Instalación y GUI validadas en el equipo del usuario | ❌ | ❌ | ❌ |
 | Firma/notarización o Authenticode de los paquetes | ❌ | ❌ | ❌ |
@@ -60,9 +66,17 @@ no se ofrecen aún builds verificados macOS Intel o Linux/Windows ARM64.
 Acceder desde un navegador de otro SO al host LAN macOS es distinto de ejecutar
 la interfaz/modelos localmente en ese SO. [Evidencia y diferencias](docs/PARIDAD_RUST.md).
 
+**OpenCode:** integración mediante el ejecutable API `seiya-server` (en los
+paquetes, `seiya-rust-server` o `seiya-server.exe`), con discovery y chat/tools
+compatibles parcialmente con OpenAI. Dos ensayos reales aislados anteriores en
+macOS no acreditan el nuevo launcher, sesiones sostenidas o Windows/Linux reales.
+No es un plugin incluido ni una configuración automática de OpenCode; la web del
+launcher no equivale por sí sola a ese servidor API. Las herramientas las ejecuta
+OpenCode, no Seiya una segunda vez. [Evidencia y alcance](docs/PRUEBA_RUST_OPENCODE.md).
+
 ## Modelos y asignaciones
 
-**Diseño objetivo del gestor (todavía no implementado):** un cerebro central,
+**Diseño objetivo completo (implementación parcial):** un cerebro central,
 un pipeline de imágenes y un grupo configurable de trabajadores fuertes. Qwen,
 DeepSeek u otros modelos compatibles podrán sustituirse por rol; cantidad y
 residencia dependerán de los recursos medidos del equipo. Varios habilitados no
@@ -92,6 +106,25 @@ Pesos/revisiones/licencias y límites: [imágenes](docs/MODELO_IMAGENES_QWEN_2_1
 [operación](docs/APP_RUST.md) y [matriz de paridad](docs/PARIDAD_RUST.md).
 
 ## Estado real
+
+**Implementación del snapshot actual, con validación real limitada:**
+arranque web sin perfil/motores y catálogo de texto con cerebro/trabajadores
+sustituibles. Conector HTTP local Rust compartido entre Windows/Linux/macOS,
+para motores externos ya preparados; pool secuencial, bindings, recursos,
+locks/journal y asignaciones CAS. Sin catálogo no se inventa un modelo disponible;
+incluye búsqueda/lectura Rust opt-in del catálogo (consultas a DuckDuckGo) y
+detección de archivos Ollama por SO con ruta editable. Probadas con fixtures,
+no búsqueda/síntesis real ni compatibilidad de instalaciones Ollama.
+El incremento siguiente añade catálogo de imágenes sustituibles y generación
+desde el chat, mediante API local preparada y panel de trabajos/PNG existente.
+[Estado general](docs/ESTADO_FUNCIONAL.md) · [operación de imágenes](docs/IMAGENES_DESDE_CHAT.md).
+La ruta nativa macOS incorpora además lifecycle secuencial Ollama/imagen, journal
+de intención y chat de imágenes opt-in con pins conservados; validación sintética,
+no liberación física de VRAM acreditada. [Operación nativa](docs/RESIDENCIA_NATIVA.md).
+macOS mantiene también su ruta MLX anterior. No hay motor/pesos incluidos ni
+visión/control del PC, y faltan builds/GUI/inferencia reales del cambio por SO.
+[Operación y límites](docs/BACKENDS_LOCALES.md). Las tablas de paquetes anteriores describen
+el build verificado del bloque Descargas; revisar su SHA frente a estas fuentes.
 
 - Prototipo funcional en [`swarm-app/`](swarm-app/README.md): Python, chat web,
   historial local, búsqueda web y API compatible parcialmente con OpenAI.
@@ -151,6 +184,11 @@ ni levanta el bloqueo por presión crítica del ensayo real.
 11. [Contrato de chat estable y lectura web, pendiente de implementación](docs/CONTRATO_CHAT_ESTABLE_Y_WEB.md)
 
 ## Desarrollo
+
+**Frontend permanente:** HTML/CSS/JavaScript y diseño existentes se conservan;
+no se portarán a Rust ni se sustituirán por otro framework. Assets congelados
+durante los incrementos de backend, con regresión SHA256. La lógica nueva
+compartida y los adaptadores de modelos pertenecen al backend Rust.
 
 Migración actual: [aplicación Rust instalable](docs/APP_RUST.md). Primer incremento:
 `seiya-desktop --check-config` valida configuración sin iniciar runtimes; entrada

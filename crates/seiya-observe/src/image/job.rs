@@ -280,6 +280,7 @@ struct Guard {
     finalized: bool,
     spawn_uncertain: bool,
     cleanup: Value,
+    intent: Option<super::coordination::NativeOperation>,
 }
 impl Guard {
     fn finish(&mut self) -> Result<(), Failure> {
@@ -291,10 +292,19 @@ impl Guard {
             };
         }
         let result = match self.child.as_mut() {
-            Some(c) => c.close().map(|v| json!({"confirmed":true,"detail":v})),
-            None if self.spawn_uncertain => Err(crate::probes::ProbeError::OwnershipChanged),
+            Some(c) => c
+                .close()
+                .map(|v| json!({"confirmed":true,"detail":v}))
+                .map_err(|e| format!("{e:?}")),
+            None if self.spawn_uncertain => Err("spawn_ownership_uncertain".into()),
             None => Ok(json!({"confirmed":true,"spawned":false})),
         };
+        let result = result.and_then(|v| {
+            if let Some(intent) = self.intent.take() {
+                intent.confirm()?;
+            }
+            Ok(v)
+        });
         self.finalized = true;
         match result {
             Ok(v) => {
@@ -433,6 +443,7 @@ pub async fn generate_with(
         finalized: false,
         spawn_uncertain: false,
         cleanup: Value::Null,
+        intent: None,
     };
     let mut report = json!({"mode":"controlled-web-image-job","width":request.width,"height":request.height,"seed":request.seed,"prompt_bytes":request.prompt.len(),"model_inference_requested":false,"memory_stop_enabled":true,"samples":[],"error":null});
     report["limits"] = json!({"swap_growth_mib":budget.max_swap_growth_mib,"deadline_seconds":budget.deadline_seconds,"warning_allowed":false,"critical_stop":true});
@@ -444,7 +455,7 @@ pub async fn generate_with(
         let output=root.join("image.png");let log_path=root.join("runtime.log");let log=OpenOptions::new().write(true).create_new(true).mode(0o600).open(&log_path).map_err(|_|Failure::Failed)?;
         let mut command=Command::new("/usr/bin/sandbox-exec");command.arg("-f").arg(profile).args(runner::argv_for(&prepared.files.binary,&prepared.files.assets,&output,&request))
             .env_clear().env("PATH","/usr/bin:/bin:/usr/sbin:/sbin").env("LC_ALL","C").env("HOME",root.join("home")).env("TMPDIR",root.join("tmp")).current_dir(&root).stdin(Stdio::null()).stdout(log.try_clone().map_err(|_|Failure::Failed)?).stderr(log);
-        control.check()?;report["model_inference_requested"]=json!(true);guard.spawn_uncertain=true;guard.child=Some(OwnedChild::spawn(&mut command).map_err(|_|Failure::Uncertain)?);guard.spawn_uncertain=false;stage.send_replace(ImageStage::Running);
+        control.check()?;guard.intent=Some(guard.lease.as_ref().ok_or(Failure::Uncertain)?.begin_native("image").map_err(|_|Failure::Blocked)?);report["model_inference_requested"]=json!(true);guard.spawn_uncertain=true;guard.child=Some(OwnedChild::spawn(&mut command).map_err(|_|Failure::Uncertain)?);guard.spawn_uncertain=false;stage.send_replace(ImageStage::Running);
         let mut cancel=cancel.clone();
         loop{
             control.check()?;let c=guard.child.as_mut().ok_or(Failure::Uncertain)?;c.refresh().map_err(|_|Failure::Uncertain)?;
@@ -567,16 +578,22 @@ mod tests {
         fs::create_dir(&root).unwrap();
         fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
         let coordination = Coordination::isolated_for_test(root.canonicalize().unwrap());
+        let lease = coordination.acquire().unwrap();
+        let intent = lease.begin_native("image").unwrap();
         let mut g = Guard {
             child: None,
-            lease: Some(coordination.acquire().unwrap()),
+            lease: Some(lease),
             root: root.clone(),
             finalized: false,
             spawn_uncertain: true,
             cleanup: Value::Null,
+            intent: Some(intent),
         };
         assert_eq!(g.finish(), Err(Failure::Uncertain));
         assert!(root.join("image-cleanup-uncertain.json").is_file());
+        assert!(root
+            .join(super::super::coordination::NATIVE_INFLIGHT)
+            .is_file());
         assert_eq!(g.cleanup["confirmed"], false);
         drop(g);
         fs::remove_dir_all(root).unwrap();
@@ -590,19 +607,28 @@ mod tests {
         fs::create_dir(&root).unwrap();
         fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
         let coordination = Coordination::isolated_for_test(root.clone());
+        let lease = coordination.acquire().unwrap();
+        let intent = lease.begin_native("image").unwrap();
         let mut command = Command::new("/bin/sleep");
         command.arg("30");
         let child = OwnedChild::spawn(&mut command).unwrap();
         let mut guard = Guard {
             child: Some(child),
-            lease: Some(coordination.acquire().unwrap()),
+            lease: Some(lease),
             root: root.clone(),
             finalized: false,
             spawn_uncertain: false,
             cleanup: Value::Null,
+            intent: Some(intent),
         };
         assert!(coordination.acquire().is_err());
+        assert!(root
+            .join(super::super::coordination::NATIVE_INFLIGHT)
+            .exists());
         guard.finish().unwrap();
+        assert!(!root
+            .join(super::super::coordination::NATIVE_INFLIGHT)
+            .exists());
         assert_eq!(guard.cleanup["confirmed"], true);
         assert!(coordination.acquire().is_err());
         drop(guard);

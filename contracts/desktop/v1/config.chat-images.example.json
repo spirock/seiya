@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "target": "macos",
+  "data_dir": "/absolute/canonical/private/Seiya/data",
+  "coordination_dir": "/absolute/canonical/home/Library/Application Support/Seiya/coordination",
+  "model_store": "/absolute/canonical/existing/model-store",
+  "llm_binary": "/absolute/canonical/existing/ollama-compatible",
+  "images": {
+    "binary": "/absolute/canonical/existing/native-image-generator",
+    "assets_dir": "/absolute/canonical/existing/pinned-image-assets"
+  },
+  "features": {"images": true, "multiagent": false},
+  "chat_images": true
+}

@@ -7,11 +7,11 @@ use std::{
     },
 };
 
-struct Fixture {
-    home: PathBuf,
+pub(super) struct Fixture {
+    pub(super) home: PathBuf,
 }
 impl Fixture {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let home = std::env::temp_dir()
             .canonicalize()
             .unwrap()
@@ -29,7 +29,7 @@ impl Fixture {
     fn bytes(&self) -> Vec<u8> {
         serde_json::to_vec(&json!({"version":1,"target":"macos","data_dir":root(&self.home).join("data"),"coordination_dir":root(&self.home).join("coordination"),"llm_binary":self.home.join("engine"),"model_store":self.home.join("models"),"features":{"images":false,"multiagent":false}})).unwrap()
     }
-    fn profile(&self) -> PathBuf {
+    pub(super) fn profile(&self) -> PathBuf {
         let _lock = prepare(&self.home).unwrap();
         save(&self.home, None, &self.bytes()).unwrap()
     }

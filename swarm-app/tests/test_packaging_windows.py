@@ -67,6 +67,12 @@ class WindowsPackagingTests(unittest.TestCase):
                 help_cmd = zipped.read('Seiya-Rust-Help.cmd').decode()
                 self.assertIn('"%~dp0seiya-desktop.exe" --help', help_cmd)
                 self.assertNotIn('--serve', help_cmd)
+                launch_cmd = zipped.read('Seiya-Rust.cmd').decode()
+                catalogue = json.loads(zipped.read('local-models.example.json'))
+                self.assertEqual(catalogue['models'][0]['runtime']['backend'], 'openai_local')
+                self.assertIn('Catálogo', zipped.read('LOCAL_MODELS.md').decode())
+                self.assertIn('"%~dp0seiya-desktop.exe" --launch', launch_cmd)
+                self.assertNotIn('--serve', launch_cmd)
                 extracted = root / 'extracted'; zipped.extractall(extracted)
             windows.inspect_payload(extracted)
             (extracted / 'seiya-server.exe').write_bytes((source / 'seiya-server.exe').read_bytes() + b'tampered')
@@ -89,6 +95,7 @@ class WindowsPackagingTests(unittest.TestCase):
             text = (PACKAGING / 'windows.iss').read_text()
             self.assertIn('PrivilegesRequired=lowest', text)
             self.assertIn('CloseApplications=no', text)
+            self.assertIn('Parameters: "--launch"', text)
             for forbidden in ('[Run]', '[Code]', '[Registry]', '[UninstallDelete]', 'recursesubdirs', '*'):
                 self.assertNotIn(forbidden, text)
             sources = {line.split('\\', 1)[1].split('"', 1)[0] for line in text.splitlines() if line.startswith('Source:')}

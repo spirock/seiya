@@ -103,6 +103,11 @@ Núcleo Rust (sesiones, scheduler, contexto, políticas, broker)
 
 ## 6. Experiencia de usuario compartida
 
+**Decisión permanente:** la interfaz se conserva en HTML/CSS/JavaScript. No se
+portará a Rust ni se sustituirá por una UI nativa/framework distinto. La migración
+afecta al backend y adaptadores. Los assets están congelados durante el incremento
+de modelos/backends; cualquier modificación funcional necesita alcance separado.
+
 - Enviar por botón o Enter; Shift+Enter crea nueva línea.
 - Vaciar el compositor al enviar; no borrar un nuevo borrador al recibir respuesta.
 - Mostrar indicador de actividad y tiempo real. No simular tokens, porcentaje

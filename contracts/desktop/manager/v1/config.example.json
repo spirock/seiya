@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "draft": {
+    "llm_binary": "/Applications/Ollama.app/Contents/Resources/ollama",
+    "model_store": "/Users/example/.ollama",
+    "image_binary": "",
+    "image_assets": "",
+    "roles": {
+      "brain": "gemma4:e2b-mlx",
+      "workers": [],
+      "image": ""
+    }
+  },
+  "profile": {
+    "version": 1,
+    "target": "macos",
+    "data_dir": "/Users/example/Library/Application Support/Seiya/data",
+    "coordination_dir": "/Users/example/Library/Application Support/Seiya/coordination",
+    "llm_binary": "/Applications/Ollama.app/Contents/Resources/ollama",
+    "model_store": "/Users/example/.ollama",
+    "images": null,
+    "features": { "images": false, "multiagent": false }
+  }
+}

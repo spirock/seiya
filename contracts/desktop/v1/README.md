@@ -17,6 +17,7 @@ ADR0057 y `docs/APP_RUST.md` describen los límites de este incremento.
 | images.assets_dir | Directorio existente absoluto/canónico; no valida manifiesto/pesos |
 | features | Opcional; ausente significa images=false y multiagent=false |
 | features.images / multiagent | Ambos bool obligatorios si features está presente |
+| chat_images | Bool opcional, false por defecto. true exige images y features.images=true; habilita image_generate en chat nativo, con presupuesto3584bytes completo sin truncar |
 
 Campos desconocidos/duplicados se rechazan también en objetos anidados. Sin
 coerción, expansión de `~`/variables ni rutas por defecto. Config regular no

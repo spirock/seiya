@@ -60,6 +60,32 @@ impl Fixture {
             .contains(self.root.to_str().unwrap()));
     }
 }
+#[test]
+fn native_chat_images_is_explicit_and_requires_enabled_image_adapter() {
+    let mut f = Fixture::new();
+    assert!(!check_file(&f.save()).unwrap().chat_images);
+    let mut documented: Value = serde_json::from_str(include_str!(
+        "../../../contracts/desktop/v1/config.chat-images.example.json"
+    ))
+    .unwrap();
+    for key in [
+        "data_dir",
+        "coordination_dir",
+        "model_store",
+        "llm_binary",
+        "images",
+    ] {
+        documented[key] = f.config[key].clone();
+    }
+    f.config = documented;
+    assert!(check_file(&f.save()).unwrap().chat_images);
+    f.config["features"]["images"] = json!(false);
+    f.rejects("chat_image_feature_required", "chat_images");
+    f.config["features"]["images"] = json!(true);
+    f.config["images"] = Value::Null;
+    f.rejects("image_adapter_required", "images");
+    assert!(!f.root.join("EXECUTED").exists());
+}
 
 impl Drop for Fixture {
     fn drop(&mut self) {

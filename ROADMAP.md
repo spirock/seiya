@@ -10,14 +10,26 @@ Descargas verificadas y matriz por sistema: [README](README.md).
   Linux x64 y Windows x64. Sin pesos, motores de inferencia o credenciales incluidos.
 - CI compila, prueba contratos e inspecciona los payloads sin instalar paquetes.
   Acciones y pruebas de interfaz usan Node24.
-- Chat web y adaptadores macOS experimentales; Windows/Linux conservan CLI/API,
-  no la experiencia de inferencia nativa macOS.
+- Shell web común y catálogo HTTP local experimental en las tres plataformas;
+  Windows/Linux no tienen la inferencia/imagen nativa macOS validada.
 - Historial de conversaciones por origen del navegador y snapshots Rust para
   trabajos/PNG, sin reenvío automático al recuperar.
 
 ## En validación · experiencia macOS
 
-Launcher con configuración/elegido de perfil, revisión de rutas, confirmación de
+Fuentes actuales: shell web-first común sin modelos/perfil y catálogo de texto
+con cerebro/trabajadores sustituibles, guardado CAS y backend HTTP local externo
+compartido Windows/Linux/macOS. Pool secuencial y controles de binding, recursos,
+exclusión e incertidumbre; los motores HTTP se preparan externamente.
+Imagen/chat opt-in, búsqueda web y detección Ollama con rutas editables. macOS
+incorpora lifecycle nativo secuencial y journal durable, conservando pins y límite
+3584bytes. No mide VRAM liberada ni añade lifecycle genérico a APIs externas.
+Frontend HTML/CSS/JS permanente
+y assets congelados; sin portarlo o reemplazar el diseño.
+Identificar el build descargado por SHA/run; pruebas sintéticas, no GUI real.
+[Operación del catálogo y límites](docs/BACKENDS_LOCALES.md).
+
+Build anterior: launcher con configuración/elegido de perfil, revisión de rutas, confirmación de
 arranque, web autenticada solo loopback y control de parada. El diseño del chat se
 conserva. Las pruebas de diálogos/browser/host usan adaptadores simulados; Finder,
 sesiones largas, modelos y presupuesto de memoria requieren validación real.

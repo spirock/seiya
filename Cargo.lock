@@ -838,13 +838,16 @@ name = "seiya-server"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "html5ever",
  "http-body-util",
+ "libc",
  "reqwest",
  "seiya-contracts",
  "seiya-observe",
  "serde",
  "serde_json",
+ "sha2",
  "subtle",
  "tokio",
  "tokio-rustls",

@@ -369,6 +369,10 @@ struct Lease {
     runtime_status: bool,
 }
 impl Lease {
+    fn confirm_rejected_before_dispatch(&mut self) {
+        self.confirmed = true;
+        self.state.store(READY, Ordering::Release);
+    }
     fn confirm_finished(&mut self) {
         self.confirmed = true;
         self.state.store(
@@ -575,6 +579,10 @@ impl InferenceAdapter {
             .unwrap_or(Err(TransportError::Timeout));
             let reply = match reply {
                 Ok(reply) => reply,
+                Err(TransportError::InputRejected) => {
+                    lease.confirm_rejected_before_dispatch();
+                    return Err(ApiError::invalid(TransportError::InputRejected.message()));
+                }
                 Err(TransportError::NotConnected) if lease.runtime_status => {
                     lease.confirm_not_dispatched();
                     return Err(not_connected());

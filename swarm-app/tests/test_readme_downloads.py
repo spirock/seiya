@@ -18,6 +18,11 @@ def metadata():
 
 
 class ReadmeDownloadsTests(unittest.TestCase):
+    def test_opencode_row_distinguishes_partial_api_from_launcher_and_real_platform_tests(self):
+        readme = (ROOT / 'README.md').read_text(encoding='utf-8')
+        self.assertIn('| Integración con OpenCode mediante API compatible parcial |', readme)
+        self.assertIn('🧪 ensayos aislados anteriores | 🧪 contratos/mocks | 🧪 contratos/mocks |', readme)
+        self.assertIn('No es un plugin incluido ni una configuración automática de OpenCode', readme)
     def test_update_changes_only_marked_block_and_is_idempotent(self):
         before = 'Keep banner\n' + downloads.START + '\nold\n' + downloads.END + '\nKeep docs\n'
         result = downloads.updated(before, metadata(), 'spirock/seiya', 123, 'a' * 40)

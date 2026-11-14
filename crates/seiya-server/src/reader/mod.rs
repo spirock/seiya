@@ -123,8 +123,23 @@ impl Reader {
         input: &str,
         deadline: tokio::time::Instant,
     ) -> Result<transport::Report, Error> {
+        self.fetch_report_with_redirect_limit(input, deadline, 2)
+            .await
+    }
+    pub async fn fetch_report_with_redirect_limit(
+        &self,
+        input: &str,
+        deadline: tokio::time::Instant,
+        max_redirects: usize,
+    ) -> Result<transport::Report, Error> {
         let active = self.acquire()?;
-        let report = transport::fetch_report(self.network.as_ref(), input, deadline).await;
+        let report = transport::fetch_report_with_redirect_limit(
+            self.network.as_ref(),
+            input,
+            deadline,
+            max_redirects,
+        )
+        .await;
         if !matches!(report.result, Err(Error::Timeout)) {
             active.release();
         }

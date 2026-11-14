@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "policy": "Keep HTML/CSS/JavaScript and existing design. Backend increments must not change these assets.",
+  "assets": {
+    "swarm-app/seiya/ui.html": "0b0337c765338d256359c2f6a676daecbb509e0157c04d700c7e0cfe88cf20e4",
+    "crates/seiya-server/src/diagnostics_ui.js": "e435306550d33fe76cfe26bdd75bdfc466382d73e86e5b258c277b828c5b6731",
+    "crates/seiya-server/src/job_history_ui.js": "e38b8ac43703ffd3b51943c2f45f30cf5acfd9124b14a069cd66d0ea8a83edb5",
+    "crates/seiya-server/src/image_jobs_ui.js": "7a27537920e804dc54e13c4a5f7cba665324e870975c113a4c422d26df53de3b",
+    "crates/seiya-server/src/desktop_setup.html": "7dca4244e0c4bdd3c72ce4eac2153e4f50bd98375562a24b7a221777b014074c",
+    "crates/seiya-server/src/desktop_setup.js": "b3f316b2911269c86c4b9106a045bdf38f9fc69c55f32598132113edbf71cb76"
+  }
+}

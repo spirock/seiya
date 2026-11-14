@@ -21,6 +21,8 @@ pub(crate) struct Config {
     pub(crate) images: Option<Images>,
     #[serde(default)]
     pub(crate) features: Features,
+    #[serde(default)]
+    pub(crate) chat_images: bool,
 }
 
 #[derive(Deserialize)]
@@ -54,6 +56,7 @@ pub struct CheckReport {
     pub target_matches_host: bool,
     pub filesystem_checked: bool,
     pub requested_features: Features,
+    pub chat_images: bool,
     pub runtime_executed: bool,
     pub inference_validated: bool,
     pub launcher_available: bool,
@@ -69,6 +72,7 @@ pub fn check_file(path: &Path) -> Result<CheckReport, CheckError> {
         target_matches_host: cfg!(target_os = "macos"),
         filesystem_checked: true,
         requested_features: config.features,
+        chat_images: config.chat_images,
         runtime_executed: false,
         inference_validated: false,
         launcher_available: false,
@@ -105,6 +109,9 @@ pub(crate) fn check_bytes(bytes: &[u8]) -> Result<Config, CheckError> {
     }
     if config.features.images && config.images.is_none() {
         return Err(error("image_adapter_required", "images"));
+    }
+    if config.chat_images && (!config.features.images || config.images.is_none()) {
+        return Err(error("chat_image_feature_required", "chat_images"));
     }
     directory(&config.data_dir, "data_dir", true)?;
     directory(&config.coordination_dir, "coordination_dir", true)?;
