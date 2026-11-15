@@ -1113,10 +1113,29 @@ async fn page(State(state): State<Arc<PreparedWeb>>) -> Response {
     } else {
         html
     };
+    let html = html
+        .replace("Preparando respuesta…", "Preparando respuesta (sin streaming)…")
+        .replace(" s · Un worker", " s · Respuesta local")
+        .replace(
+            "Esta conversación tiene un mensaje sin respuesta; puedes volver a enviarlo.",
+            "Esta conversación tiene un mensaje sin respuesta; recupéralo como borrador antes de reenviar.",
+        )
+        .replace(
+            "let data;try{data=await r.json();}catch{throw Error('Respuesta de chat inválida; estado incierto, no reenvíes sin comprobar.');}",
+            "let data;try{data=await r.json();}catch{if(!r.ok)throw seiyaHttpError(r,null);throw Error('Respuesta de chat inválida; estado incierto, no reenvíes sin comprobar.');}",
+        )
+        .replace(
+            "</script>",
+            &format!("\n{}\n</script>", include_str!("chat_text_ui.js")),
+        );
     let html = if state.chat_images {
         html.replace(
             "</script>",
             &format!("\n{}\n</script>", include_str!("chat_images_ui.js")),
+        )
+        .replace(
+            "if(busy||seiyaHistoryDeleting)return;",
+            "if(busy||seiyaHistoryDeleting)return;if(seiyaChatImageDeletionBlocked())return;",
         )
     } else {
         html

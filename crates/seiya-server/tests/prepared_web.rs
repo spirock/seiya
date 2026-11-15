@@ -247,6 +247,15 @@ async fn blocked_by_default_but_controls_and_static_login_remain_available() {
     assert!(html.contains("Integración preparada, no activada"));
     assert!(html.contains("seiya.prepared.chats.v1"));
     assert!(!html.contains("const storageKey='seiya.chats.v1'"));
+    assert!(html.contains("const seiyaTextFetch=seiyaChatFetch;"));
+    assert!(html.contains("Recuperar mensaje sin respuesta"));
+    assert!(html.contains("Preparando respuesta (sin streaming)…"));
+    assert!(html.contains("s · Respuesta local"));
+    assert!(html.contains("catch{if(!r.ok)throw seiyaHttpError(r,null);"));
+    assert!(
+        html.find("async function seiyaChatFetch").unwrap()
+            < html.find("const seiyaTextFetch=seiyaChatFetch;").unwrap()
+    );
     let original = include_str!("../../../swarm-app/seiya/ui.html");
     assert_eq!(
         html.split("<style>")

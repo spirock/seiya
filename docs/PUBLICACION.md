@@ -65,6 +65,22 @@ separados de la publicación de artefactos.
 
 ## Evidencia de referencia
 
+### Chat y recuperación de imágenes · incremento2026-11-15
+
+El snapshot de este incremento incluye validación de respuestas de texto,
+recuperación explícita de mensajes y de registros de imagen sin regeneración,
+con protección del borrador y del borrado incierto. CHAT_TEXTO.md se incluye en
+los payloads macOS/Linux/Windows, junto con la guía de prueba y los límites.
+Las allowlists e inspectores verifican ese documento, sin incluir datos privados.
+
+Regresión de código previa:499 Rust+196 Python,8 suites Node y25 ignored en
+ejecución serial; el harness real permanece ignorado por defecto, sin cargar
+modelos en CI. Un intento real autorizado alcanzó presión crítica durante carga
+de Gemma a3,527s, con cleanup confirmado y sin PNG. Un build/inspección correcto
+no resuelve ese bloqueo ni valida una sesión real; no repetirlo al empaquetar.
+Los links definitivos pertenecen solo al SHA/run completo que indiquen ambas
+portadas después de Actions; nunca anunciar nuevos ejecutables por un push.
+
 ### Incremento local · catálogo de texto y backend portable (sin publicar)
 
 Regresión final:452 Rust+194 Python y4 suites Node correctas,24 ignored;

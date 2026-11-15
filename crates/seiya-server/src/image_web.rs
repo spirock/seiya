@@ -1248,6 +1248,8 @@ async fn run_mode(
 }
 
 #[cfg(test)]
+mod real_chat_image;
+#[cfg(test)]
 mod tests {
     use super::*;
     #[test]

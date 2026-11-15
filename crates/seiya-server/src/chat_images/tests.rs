@@ -263,6 +263,14 @@ async fn page_includes_opt_in_bridge_and_http_auth_origin_precede_any_generation
     .unwrap();
     assert!(text.contains("const seiyaChatWithoutImages=seiyaChatFetch"));
     assert!(text.contains("Imágenes locales"));
+    assert!(text.contains("if(seiyaChatImageDeletionBlocked())return;"));
+    assert!(text.contains("Recuperar imagen registrada"));
+    assert!(
+        text.find("const seiyaTextFetch=seiyaChatFetch").unwrap()
+            < text
+                .find("const seiyaChatWithoutImages=seiyaChatFetch")
+                .unwrap()
+    );
     let body = request(&session, &uuid::Uuid::new_v4().to_string()).to_string();
     for (auth, origin, expected) in [(false, "", 401), (true, "https://foreign.invalid", 403)] {
         let mut r = Request::post("/api/chat")

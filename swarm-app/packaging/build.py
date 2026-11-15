@@ -181,7 +181,8 @@ def rust_stage(root, binaries, mac, arch, libc_min=None, revision=None):
     for source, dest in [('docs/PAQUETES_PRUEBA.md', 'README.md'), ('docs/APP_RUST.md', 'APP_RUST.md'), ('docs/PARIDAD_RUST.md', 'PARIDAD_RUST.md'), ('docs/BACKENDS_LOCALES.md', 'BACKENDS_LOCALES.md'),
                          ('docs/IMAGENES_DESDE_CHAT.md', 'IMAGENES_DESDE_CHAT.md'),
                          ('docs/RESIDENCIA_NATIVA.md', 'RESIDENCIA_NATIVA.md'),
-                         ('docs/PRUEBA_INSTALADOR.md', 'PRUEBA_INSTALADOR.md'),
+                          ('docs/PRUEBA_INSTALADOR.md', 'PRUEBA_INSTALADOR.md'),
+                          ('docs/CHAT_TEXTO.md', 'CHAT_TEXTO.md'),
                          ('contracts/desktop/v1/config.chat-images.example.json', 'desktop-chat-images.example.json'),
                          ('contracts/local-models/v1/images.example.json', 'local-models-images.example.json'),
                          ('LICENSE', 'LICENSE'), ('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md'),
@@ -228,7 +229,7 @@ def verify_rust_stage(root, mac, arch):
     prefix = 'usr/local/bin/' if mac else 'usr/bin/'
     expected = {lib + n for n in ('seiya-desktop', 'seiya-server')}
     expected.update(doc + n for n in ('README.md', 'APP_RUST.md', 'PARIDAD_RUST.md', 'BACKENDS_LOCALES.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'desktop.example.json', 'local-models.example.json', 'LOCAL_MODELS.md', 'BUILD-INFO.json'))
-    expected.update(doc+n for n in ('IMAGENES_DESDE_CHAT.md','RESIDENCIA_NATIVA.md','PRUEBA_INSTALADOR.md','desktop-chat-images.example.json','local-models-images.example.json'))
+    expected.update(doc+n for n in ('IMAGENES_DESDE_CHAT.md','RESIDENCIA_NATIVA.md','PRUEBA_INSTALADOR.md','CHAT_TEXTO.md','desktop-chat-images.example.json','local-models-images.example.json'))
     expected.update(prefix + n for n in ('seiya-rust', 'seiya-rust-server'))
     if mac:
         expected.update((app + 'Info.plist', app + 'MacOS/Seiya', app + 'Resources/Seiya.command'))

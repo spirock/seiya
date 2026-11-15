@@ -15,7 +15,7 @@ from build import ROOT, VERSION, write
 FILES = {'seiya-desktop.exe', 'seiya-server.exe', 'README.md', 'LICENSE',
          'THIRD_PARTY_NOTICES.md', 'server.discovery.example.json', 'BUILD-INFO.json',
          'Seiya-Rust-Help.cmd', 'Seiya-Rust.cmd', 'local-models.example.json', 'LOCAL_MODELS.md', 'BACKENDS_LOCALES.md'}
-FILES.update({'IMAGENES_DESDE_CHAT.md','RESIDENCIA_NATIVA.md','PRUEBA_INSTALADOR.md','desktop-chat-images.example.json','local-models-images.example.json'})
+FILES.update({'IMAGENES_DESDE_CHAT.md','RESIDENCIA_NATIVA.md','PRUEBA_INSTALADOR.md','CHAT_TEXTO.md','desktop-chat-images.example.json','local-models-images.example.json'})
 
 
 def windows_binary(path):
@@ -56,7 +56,8 @@ def stage_payload(root, binaries, revision=None):
                           ('docs/BACKENDS_LOCALES.md', 'BACKENDS_LOCALES.md'),
                           ('docs/IMAGENES_DESDE_CHAT.md', 'IMAGENES_DESDE_CHAT.md'),
                           ('docs/RESIDENCIA_NATIVA.md', 'RESIDENCIA_NATIVA.md'),
-                          ('docs/PRUEBA_INSTALADOR.md', 'PRUEBA_INSTALADOR.md'),
+                           ('docs/PRUEBA_INSTALADOR.md', 'PRUEBA_INSTALADOR.md'),
+                           ('docs/CHAT_TEXTO.md', 'CHAT_TEXTO.md'),
                           ('contracts/desktop/v1/config.chat-images.example.json', 'desktop-chat-images.example.json'),
                           ('contracts/local-models/v1/images.example.json', 'local-models-images.example.json'),
                          ('contracts/desktop/windows/server.discovery.example.json', 'server.discovery.example.json')]:

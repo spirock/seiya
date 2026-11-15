@@ -127,7 +127,7 @@ class RustPackagingTests(unittest.TestCase):
             self.assertTrue((app / 'Resources/local-models.example.json').is_file())
             self.assertTrue((app / 'Resources/LOCAL_MODELS.md').is_file())
             self.assertTrue((app / 'Resources/BACKENDS_LOCALES.md').is_file())
-            for name in ('IMAGENES_DESDE_CHAT.md','RESIDENCIA_NATIVA.md','PRUEBA_INSTALADOR.md','desktop-chat-images.example.json','local-models-images.example.json'):
+            for name in ('IMAGENES_DESDE_CHAT.md','RESIDENCIA_NATIVA.md','PRUEBA_INSTALADOR.md','CHAT_TEXTO.md','desktop-chat-images.example.json','local-models-images.example.json'):
                 self.assertTrue((app / 'Resources' / name).is_file(), name)
             self.assertTrue(json.loads((app / 'Resources/desktop-chat-images.example.json').read_text())['chat_images'])
 

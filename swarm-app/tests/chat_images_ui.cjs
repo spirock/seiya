@@ -3,11 +3,14 @@ const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('nod
 const source=fs.readFileSync('crates/seiya-server/src/chat_images_ui.js','utf8');
 function fixture(){
  const chat={id:'conversation'},calls=[],events={},status={textContent:''};let fail=false,saves=true,counter=0;
- const context={activeChat:()=>chat,$:id=>id==='deleteChat'?{addEventListener:(n,fn)=>events[n]=fn}:status,
+  const context={activeChat:()=>chat,$:id=>id==='deleteChat'?{addEventListener:(n,fn)=>events[n]=fn}:status,
+   document:{createElement:()=>({})},openChat:()=>{},seiyaRenderImages:()=>{},
+   seiyaValidJobList:data=>{assert.ok(data.jobs.every(j=>j&&typeof j.job_id==='string'&&j.phase==='queued'&&j.artifact_available===false));},
   crypto:{randomUUID:()=>`11111111-1111-4111-8111-${String(++counter).padStart(12,'0')}`},
   saveChats:()=>saves,seiyaUuid:s=>typeof s==='string'&&/^[a-f0-9-]{36}$/.test(s),
   seiyaImageSession:async()=> 'private-image-session',seiyaImageLabels:{queued:'queued'},seiyaRefreshImages:async()=>{},
-  seiyaChatFetch:async(headers,payload)=>{calls.push(payload);if(fail)throw Error('uncertain');return {json:async()=>({image_job:{job_id:'22222222-2222-4222-8222-222222222222',request_id:payload.image_request_id,phase:'queued'}})}}};
+   seiyaChatFetch:async(headers,payload)=>{calls.push(payload);if(fail)throw Error('uncertain');return {json:async()=>({image_job:{job_id:'22222222-2222-4222-8222-222222222222',request_id:payload.image_request_id,phase:'queued',artifact_available:false}})}}};
+  status.append=()=>{};
  vm.createContext(context);vm.runInContext(source,context);
  return {context,chat,calls,events,status,fail:v=>fail=v,saves:v=>saves=v};
 }

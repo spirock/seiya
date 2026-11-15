@@ -71,6 +71,7 @@ class WindowsPackagingTests(unittest.TestCase):
                 catalogue = json.loads(zipped.read('local-models.example.json'))
                 self.assertEqual(catalogue['models'][0]['runtime']['backend'], 'openai_local')
                 self.assertIn('Catálogo', zipped.read('LOCAL_MODELS.md').decode())
+                self.assertEqual(zipped.read('CHAT_TEXTO.md'), (builder.ROOT.parent / 'docs/CHAT_TEXTO.md').read_bytes())
                 self.assertIn('"%~dp0seiya-desktop.exe" --launch', launch_cmd)
                 self.assertNotIn('--serve', launch_cmd)
                 extracted = root / 'extracted'; zipped.extractall(extracted)

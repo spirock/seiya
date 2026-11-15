@@ -10,8 +10,9 @@ README sigue describiendo el build distribuido anteriormente.
 | Identidad del SO | Driver Rust común, estado y detector Ollama | Fixtures de SO/arquitectura; no certifica otro target por compilar en macOS |
 | Ollama | Rutas conocidas, override editable, aviso sin fallback | Archivos/fixtures; falta ensayo con instalaciones reales |
 | Texto intercambiable | Catálogo, cerebro/trabajadores, bindings exactos, round-robin | HTTP/recursos simulados; no todos los modelos ni GPU reales |
+| Chat de texto | Validación previa a render, errores auth sin JSON y recuperación explícita de turnos sin respuesta; borrador protegido | [Flujo y límites](CHAT_TEXTO.md); DOM/HTTP sintéticos, navegador/inferencia sostenida pendientes |
 | Imagen intercambiable | Catálogo image_models y selección CAS | Fixtures; necesita motor preparado con contrato de imagen. PNG nativo macOS |
-| Imagen desde chat | Opt-in image_generate, registro idempotente y panel/progreso/PNG; también perfil nativo con chat_images | Cerebro/imagen sintéticos; falta eficacia con modelos reales. Perfil viejo continúa manual hasta revisión |
+| Imagen desde chat | Opt-in image_generate, registro idempotente y panel/progreso/PNG; recuperación explícita de ACK perdido sin regenerar y guard de borrado; también perfil nativo con chat_images | Cerebro/imagen sintéticos e integración de scripts; falta eficacia con modelos reales. Perfil viejo continúa manual hasta revisión |
 | Imágenes nativas | Pipeline Qwen macOS, control manual y chat opt-in | Pins conservados, ensayos anteriores no validan integración nueva |
 | Búsqueda web | Opt-in, búsqueda/lectura/citas acotadas y cancelación | Fixtures; falta Internet y síntesis real en la integración nueva |
 | Recursos y exclusión | Admisión, slot texto/imagen, locks y journals persistentes | Mocks/HTTP sintético; no mide VRAM ni confirma unload |
@@ -27,6 +28,10 @@ actualizan enlaces al mismo build. El asistente añade feedback junto al botón
 Revisar y una acción explícita de borrador solo texto, sin saltarse validaciones.
 El acceso local usa /app/ sin caducidad30min ni plazo total de host desktop;
 reiniciar/cerrar revoca la sesión. Los límites por inferencia siguen activos.
+
+Ensayo real de chat→imagen2026-11-15: detenido al cargar el cerebro por presión
+crítica del host (3,527s); limpieza propia confirmada, sin PNG ni reintento. Esto
+no valida la generación integrada real. No se alteró el perfil guardado del usuario.
 
 HTML/CSS/JS y diseño se conservan. El incremento de imágenes conversacionales
 añade un puente JS acotado al panel existente, sin modificar los seis assets

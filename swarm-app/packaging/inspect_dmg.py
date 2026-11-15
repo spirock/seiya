@@ -25,7 +25,7 @@ def inspect(root, arch, revision=None):
         'Info.plist', 'MacOS/Seiya', 'MacOS/seiya-desktop', 'MacOS/seiya-server',
         'Resources/Seiya.command', *('Resources/' + n for n in (
             'README.md','APP_RUST.md','PARIDAD_RUST.md','BACKENDS_LOCALES.md',
-            'IMAGENES_DESDE_CHAT.md','RESIDENCIA_NATIVA.md','PRUEBA_INSTALADOR.md',
+            'IMAGENES_DESDE_CHAT.md','RESIDENCIA_NATIVA.md','PRUEBA_INSTALADOR.md','CHAT_TEXTO.md',
             'desktop-chat-images.example.json','local-models-images.example.json',
             'LICENSE','THIRD_PARTY_NOTICES.md','desktop.example.json',
             'local-models.example.json','LOCAL_MODELS.md','BUILD-INFO.json')))}

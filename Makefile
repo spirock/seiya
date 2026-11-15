@@ -24,8 +24,10 @@ test-image-ui:
 	$(NODE) swarm-app/tests/desktop_setup_ui.cjs
 	$(NODE) swarm-app/tests/images_ui.cjs
 	$(NODE) swarm-app/tests/history_ui.cjs
+	$(NODE) swarm-app/tests/chat_text_ui.cjs
 	$(NODE) swarm-app/tests/diagnostics_ui.cjs
 	$(NODE) swarm-app/tests/chat_images_ui.cjs
+	$(NODE) swarm-app/tests/chat_image_recovery_ui.cjs
 	$(NODE) swarm-app/tests/desktop_setup_feedback.cjs
 
 serve:

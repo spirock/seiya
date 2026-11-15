@@ -46,6 +46,7 @@ Source: "{#StageDir}\BACKENDS_LOCALES.md"; DestDir: "{app}"; Flags: ignoreversio
 Source: "{#StageDir}\IMAGENES_DESDE_CHAT.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StageDir}\RESIDENCIA_NATIVA.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StageDir}\PRUEBA_INSTALADOR.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#StageDir}\CHAT_TEXTO.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StageDir}\desktop-chat-images.example.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StageDir}\local-models-images.example.json"; DestDir: "{app}"; Flags: ignoreversion
 

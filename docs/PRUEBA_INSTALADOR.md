@@ -27,6 +27,21 @@ solo el nombre del archivo. Los artefactos Actions pueden exigir sesión GitHub.
    de imágenes se registra por petición explícita y termina en el panel de trabajos;
    un mensaje del chat no acredita por sí solo un PNG completado.
 
+### Cambios de chat y recuperación de imágenes
+
+Los builds nuevos del incremento de recuperación añaden validación de respuesta,
+protección del borrador y «Recuperar mensaje sin respuesta» para llevar el último
+turno al editor sin reenviarlo. Si se perdió el ACK de una imagen pero el panel
+observa su registro, «Recuperar imagen registrada» lo confirma consultando estado
+sin generar otra imagen. Un borrador diferente se conserva; no se borra un chat
+con registro incierto. [Chat de texto](CHAT_TEXTO.md) ·
+[Imágenes y límites](IMAGENES_DESDE_CHAT.md).
+
+El ensayo real2026-11-15 se detuvo al cargar Gemma por presión crítica del host,
+con cleanup propio confirmado y sin PNG. Un instalador correcto no elimina ese
+bloqueo de recursos. No relajar guardas, borrar journals o interpretar recuperación
+como generación completada. Los perfiles anteriores no activan imágenes solos.
+
 Los paquetes no están firmados/notarizados. Si macOS bloquea la instalación,
 anotar el aviso exacto para feedback y decidir según la política del equipo.
 **No desactivar Gatekeeper ni la protección global del sistema.** Esta entrega

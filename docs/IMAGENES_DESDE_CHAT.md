@@ -65,6 +65,68 @@ Una sesión ajena, acciones múltiples o argumentos URL/model/path se rechazan.
 Una búsqueda o página no puede autorizar la imagen: solo primera acción del turno,
 antes de recibir resultados web, nunca tool después de snippets/extractos.
 
+### Si se perdió la confirmación del chat
+
+El panel puede mostrar el trabajo aunque el chat haya recibido un error de
+conexión. En las fuentes nuevas, **Recuperar imagen registrada** aparece cuando
+una lista válida del broker coincide con la referencia pendiente de ese chat.
+Al pulsarlo se consulta una lista fresca y se confirma el registro localmente:
+no se reenvía el chat ni se solicita otra generación. Recuperar un trabajo en
+cola/en ejecución **no significa que el PNG haya terminado**.
+
+Se limpia el compositor solo si todavía contiene exactamente el texto original;
+un borrador distinto se conserva. Si falla el almacenamiento, la referencia y
+el borrador se restauran. Una lista vacía, auth fallida, estado ambiguo o respuesta
+tardía de otra conversación no descarta la referencia. El chat no se puede
+eliminar mientras siga sin confirmar, antes de olvidar trabajos o PNG propios.
+Las respuestas de registro malformadas tampoco dan por confirmado el envío.
+
+Las pruebas `chat_image_recovery_ui.cjs` usan todos los complementos en orden de
+producción y un broker simulado; las Rust ejercitan la ruta HTTP y PNG sintético.
+No constituyen una generación real con el cerebro/motor configurados.
+
+### Validación real aún pendiente
+
+Se necesita una prueba explícita, aislada y autorizada con modelos ya preparados:
+pedir una imagen512×512 desde el chat, observar el cambio de residente (si el
+driver nativo lo gestiona), esperar completed y abrir/descargar el PNG. Comprobar
+después recarga sin nueva generación y limpieza de procesos propios. No iniciar
+otro coordinador sobre un runtime compartido, quitar guardas de presión, borrar
+cuarentena, descargar pesos o adoptar servicios para superar esta prueba.
+Calidad visual, reconocimiento de intención y liberación de RAM/VRAM se registran
+por separado; una imagen no valida sesiones largas o todos los modelos.
+
+El harness manual ignorado `image_web::real_chat_image::real_chat_image_once`
+usa el mismo host desktop nativo y su router autenticado, con un perfil temporal
+privado y datos vacíos bajo el temporal aprobado. Exige permiso explícito por
+entorno y rechaza una raíz ya utilizada. No forma parte de `make test` normal.
+Hace una sola petición de chat (sin forzar tools), espera el estado observado,
+recupera/decodifica el PNG si termina y solicita stop/drenaje antes de reportar.
+Si se bloquea o el cerebro no propone imagen, guarda el error sin retry ni
+fallback al control manual. No usa el historial o configuración guardados del
+usuario y no valida Safari por ejecutar HTTP en proceso. Repetir exige un nuevo
+permiso y otra raíz; no borrar evidencia para volver a ejecutar la misma.
+
+Ensayo autorizado2026-11-15: preflight e inicio del host correctos, pero la carga
+del cerebro Gemma alcanzó presión crítica del host a3,527s y fue detenida por la
+guarda. No se registró ni generó una imagen. Limpieza confirmada de3 procesos
+propios, sin marcadores pendientes; no retry ni relajación de límites. Por tanto,
+la integración sigue validada con fixtures, **no end-to-end real** en este equipo.
+Hace falta resolver el presupuesto de recursos y un nuevo ensayo autorizado;
+no sustituir automáticamente el modelo ni cerrar otras aplicaciones.
+
+Regresión final de recuperación:499 pruebas Rust,196 Python y8 suites Node
+correctas en ejecución serial fuera del árbol iCloud;25 ignoradas, incluido el
+harness real manual. Formato/Clippy correctos. Una fixture anterior de sockets
+agotó su plazo2s en el árbol original y pasó aislada y en la repetición completa;
+no se modificó su deadline ni se da por corregida su causa. El intento real
+fallido descrito arriba sigue siendo un resultado separado, no una prueba verde.
+
+Los instaladores anteriores al incremento de recuperación (incluido bbe3139)
+no contienen el nuevo botón ni el guard de borrado integrado; verificar el SHA
+del build en README y BUILD-INFO.json antes de probar. Rollback de las fuentes: retirar el
+hook de borrado y el complemento de recuperación, sin borrar historial ni jobs.
+
 ## Memoria, cancelación y límites
 
 Texto y generación comparten exclusión y journals del catálogo. Memoria desconocida
