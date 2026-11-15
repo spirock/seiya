@@ -1229,10 +1229,27 @@ async fn page(State(state): State<Arc<PreparedWeb>>) -> Response {
     } else {
         html
     };
-    let html = if let Some(home) = state.desktop_setup.lock().unwrap().as_ref() {
+    let setup_home = state.desktop_setup.lock().unwrap().clone();
+    let html = if let Some(home) = setup_home
+        .as_ref()
+        .filter(|home| crate::settings_menu::valid_home(home))
+    {
         html.replace(
             "</header>",
-            &format!("<a href=\"{home}\">Configurar modelos</a></header>"),
+            &format!(
+                "<a id=\"seiyaModelsSettingsLink\" href=\"{home}\">Configurar modelos</a></header>"
+            ),
+        )
+    } else {
+        html
+    };
+    let html = if state.diagnostics.is_some() || setup_home.is_some() {
+        html.replace(
+            "</html>",
+            &format!(
+                "{}</html>",
+                crate::settings_menu::render(setup_home.as_deref())
+            ),
         )
     } else {
         html
@@ -1259,6 +1276,7 @@ pub fn app(
     }
     router(address, key, state, "http")
 }
+
 /// Only the TLS host calls this. Exact private IPv4 authority, never wildcard.
 pub(crate) fn lan_tls_app(
     address: SocketAddr,
@@ -1315,4 +1333,103 @@ fn router(
         .with_state(state)
         .layer(middleware::from_fn_with_state(guard, crate::guard))
         .merge(public_page))
+}
+
+#[cfg(test)]
+mod settings_menu_tests {
+    use super::*;
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn settings_are_after_chat_scripts_and_keep_cookie_and_frame_boundaries() {
+        struct Never;
+        impl RuntimeTransport for Never {
+            fn complete(&self, _: Value) -> RuntimeFuture<'_> {
+                Box::pin(async { panic!("settings must not dispatch a model") })
+            }
+        }
+        let state = PreparedWeb::solo(
+            RuntimeConfig {
+                id: "settings-fixture".into(),
+                model: FOREGROUND.into(),
+                backend: crate::runtime::Backend::Mlx,
+                base_url: "http://127.0.0.1:22001/v1".into(),
+                timeout_seconds: 10,
+                max_output_tokens: 256,
+            },
+            Arc::new(Never),
+            Arc::new(Denied),
+        )
+        .unwrap()
+        .with_diagnostics(crate::diagnostics::Diagnostics::memory(Arc::new(
+            || json!({"pressure":1,"swap_bytes":0}),
+        )))
+        .unwrap();
+        state.desktop_setup_home(format!("http://127.0.0.1:8015/app/{}/", "b".repeat(32)));
+        let inner = Router::new().route("/", get(page)).with_state(state);
+        let (app, link, _) =
+            crate::pair_trial::access::desktop_shell("127.0.0.1:8015".parse().unwrap(), inner);
+        let bootstrap = app
+            .clone()
+            .oneshot(
+                axum::http::Request::get(reqwest::Url::parse(&link).unwrap().path())
+                    .header(header::HOST, "127.0.0.1:8015")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let cookie = bootstrap.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap();
+        let path = bootstrap.headers()[header::LOCATION].to_str().unwrap();
+        let response = app
+            .clone()
+            .oneshot(
+                axum::http::Request::get(path)
+                    .header(header::HOST, "127.0.0.1:8015")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::X_FRAME_OPTIONS], "DENY");
+        let html = String::from_utf8(
+            response
+                .into_body()
+                .collect()
+                .await
+                .unwrap()
+                .to_bytes()
+                .to_vec(),
+        )
+        .unwrap();
+        assert!(
+            html.find("const seiyaConfigurationButton=").unwrap()
+                < html.find("function seiyaInitializeModels()").unwrap()
+        );
+        assert!(html.contains("id=\"seiyaModelsSettingsLink\""));
+        assert!(html.contains("Configuración general"));
+        assert!(html.contains("Configuración de modelos"));
+        assert!(!html.contains("<iframe"));
+        assert!(!html.contains("el('prompt').disabled = true"));
+        assert_eq!(
+            app.oneshot(
+                axum::http::Request::get(path)
+                    .header(header::HOST, "127.0.0.1:8015")
+                    .body(Body::empty())
+                    .unwrap()
+            )
+            .await
+            .unwrap()
+            .status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
 }

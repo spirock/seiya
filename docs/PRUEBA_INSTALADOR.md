@@ -29,6 +29,13 @@ solo el nombre del archivo. Los artefactos Actions pueden exigir sesión GitHub.
 
 ### Cambios de chat y recuperación de imágenes
 
+El incremento de submenú añade en **Configuración** dos opciones:
+**Configuración de modelos** y **Configuración general**. Sus vistas aparecen
+en el espacio del chat; Volver al chat/Escape conservan conversación, borrador
+y campos editados. Abrir ajustes no guarda ni carga modelos. No recupera por sí
+solo un runtime detenido o en cuarentena: el bloqueo de envío es independiente.
+Los builds anteriores, incluido b8ae9e2, no contienen este submenú.
+
 Los builds nuevos del incremento de recuperación añaden validación de respuesta,
 protección del borrador y «Recuperar mensaje sin respuesta» para llevar el último
 turno al editor sin reenviarlo. Si se perdió el ACK de una imagen pero el panel

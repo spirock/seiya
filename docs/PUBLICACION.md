@@ -65,6 +65,15 @@ separados de la publicación de artefactos.
 
 ## Evidencia de referencia
 
+### Submenú Configuración · incremento2026-11-15
+
+El incremento CM organiza modelos/general en vistas dentro del chat, reutiliza
+el asistente estático bajo demanda y conserva historial/borrador. No añade rutas,
+iframes o cargas al navegar, ni elimina bloqueos/journals de un runtime anterior.
+Regresión local502 Rust+196 Python,9 suites Node/25 ignored y fmt/Clippy correctos.
+Las descargas nuevas se identifican por su SHA/run en ambas portadas, no por el
+nombre0.1.0. Firma, Safari e instalación reales siguen sin validarse por el build.
+
 ### Chat y recuperación de imágenes · incremento2026-11-15
 
 El snapshot de este incremento incluye validación de respuestas de texto,

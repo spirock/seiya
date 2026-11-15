@@ -28,6 +28,29 @@ Enter envía, Shift+Enter añade línea y la composición IME no envía por acci
 La respuesta sigue siendo bufferizada, no streaming de tokens. Abortar una espera
 HTTP no acredita cancelación del runtime ni liberación de RAM/VRAM.
 
+## Configuración dentro del chat
+
+Las fuentes del incremento de submenú añaden dos opciones al pulsar
+**Configuración**: **Configuración de modelos** y **Configuración general**.
+Se muestran en el área central sin abandonar la conversación. El acceso
+«Configurar modelos» de la cabecera abre la misma vista.
+
+Volver al chat, Escape o seleccionar otra conversación cierra la vista sin borrar
+historial, borrador o campos editados. Durante un envío no se cambia de vista.
+Abrir/alternar ajustes no guarda ni inicia motores. Modelos reutiliza el asistente
+y sus APIs autenticadas, con detección/estado solo al primer acceso; general
+conserva los controles actuales de opciones, límites y diagnóstico.
+
+Guardar, iniciar o detener siguen requiriendo sus acciones explícitas y las
+guardas existentes. Si se cambia de host, «Abrir chat» sigue abriendo el acceso
+nuevo correspondiente; ocultar los ajustes no recupera un runtime detenido.
+No se usan iframes ni se relajan las protecciones del navegador. Un host sin
+gestor de modelos o diagnóstico no anuncia esos controles como disponibles.
+Este cambio de fuentes no está en el instalador b8ae9e2 publicado anteriormente.
+Validación del submenú:502 pruebas Rust y196 Python,9 suites Node correctas en
+serie;25 pruebas ignoradas. Formato/Clippy correctos, seis assets congelados sin
+cambios. No acredita interacción real en Safari ni recupera un runtime bloqueado.
+
 ## Comprobación y rollback
 
 `node swarm-app/tests/chat_text_ui.cjs` usa DOM/HTTP sintéticos. Cubre éxito,

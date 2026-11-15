@@ -21,6 +21,7 @@ pub mod prepared_web;
 pub mod reader;
 pub mod runtime;
 pub mod scheduler;
+mod settings_menu;
 mod sse;
 pub mod web_chat;
 #[cfg(target_os = "macos")]
