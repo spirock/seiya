@@ -1,4 +1,16 @@
 use super::*;
+
+#[test]
+fn test_chat_links_are_exactly_bound_to_the_test_port() {
+    let bootstrap = format!("http://127.0.0.1:8016/session/{}", "a".repeat(64));
+    let home = format!("http://127.0.0.1:8016/app/{}/", "b".repeat(32));
+    assert!(valid_url_at(&bootstrap, true, 8016));
+    assert!(valid_url_at(&home, false, 8016));
+    assert!(!valid_url_at(&bootstrap, true, 8015));
+    assert!(!valid_url_at(&home, false, 8015));
+    assert!(!valid_url_at(&format!("{home}?token=x"), false, 8016));
+    assert!(!valid_url_at(&home.replace(":8016", ":8017"), false, 8016));
+}
 use std::{
     collections::VecDeque,
     sync::{

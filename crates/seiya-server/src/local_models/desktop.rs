@@ -287,8 +287,9 @@ impl Adapter for Desktop {
             } else {
                 state
             };
+            let port = crate::settings_menu::desktop_port(&setup_home)?;
             state.desktop_setup_home(setup_home);
-            let address = "127.0.0.1:8015".parse().unwrap();
+            let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
             let (router, bootstrap) = crate::pair_trial::access::app(address, state.clone())
                 .map_err(|e| e.to_string())?;
             let home = state.local_browser_home(address);

@@ -62,7 +62,7 @@ pub async fn gemma_smoke(root: &Path) -> Result<Value, String> {
         drop(lease);
         let settings=crate::diagnostics::Diagnostics::memory(Arc::new(native::memory));report["limits"]=serde_json::to_value(settings.limits()).map_err(|_|"smoke_limits")?;
         let session=Arc::new(Session{feature_controlled:false,multiagent_configured:false,images_enabled:false,settings,until:Some(Instant::now()+Duration::from_secs(180)),enabled:AtomicBool::new(true),failed:AtomicBool::new(false),residency:Residency::new()});
-        let chat=Chat{model:FOREGROUND,session:session.clone(),root:root.to_owned(),source,binary:pair_trial::native::OLLAMA.into(),environment:Environment::legacy()};
+        let chat=Chat{model:FOREGROUND,session:session.clone(),root:root.to_owned(),source,binary:pair_trial::native::OLLAMA.into(),environment:Environment::legacy(),critical_probe:false};
         let mut interrupt=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).map_err(|_|"smoke_signal")?;let mut term=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).map_err(|_|"smoke_signal")?;
         report["turn_attempted"]=json!(true);
         let response=tokio::select!{r=chat.turn(json!({"model":FOREGROUND,"messages":[{"role":"user","content":"Responde exactamente SEIYA_OK, sin explicaciones."}]}))=>r.map_err(|e|format!("gemma_turn:{e:?}")),_=interrupt.recv()=>Err("smoke_interrupted".into()),_=term.recv()=>Err("smoke_terminated".into()),_=tokio::time::sleep(Duration::from_secs(150))=>Err("smoke_outer_deadline".into())};
@@ -291,6 +291,19 @@ struct Chat {
     source: PathBuf,
     binary: PathBuf,
     environment: Environment,
+    critical_probe: bool,
+}
+fn development_critical_probe(
+    address: SocketAddr,
+    portable: bool,
+    desktop: bool,
+    requested: Option<&str>,
+) -> bool {
+    cfg!(debug_assertions)
+        && address == SocketAddr::from(([127, 0, 0, 1], 8016))
+        && portable
+        && desktop
+        && requested == Some("critical-only")
 }
 struct ChatOwner {
     child: Option<OwnedChild>,
@@ -498,12 +511,12 @@ impl Chat {
     ) -> Result<(), TransportError> {
         let mut memory = native::memory();
         memory["memory_stop_enabled"] = json!(true);
-        let memory_allowed = pressure.observe(
-            start.elapsed().as_millis() as u64,
-            &memory,
-            baseline,
-            limits,
-        );
+        let now = start.elapsed().as_millis() as u64;
+        let memory_allowed = if self.critical_probe {
+            pressure.observe_development_critical(now, &memory, baseline, limits)
+        } else {
+            pressure.observe(now, &memory, baseline, limits)
+        };
         let disk_allowed = native::disk_free(&owner.root).is_ok_and(|n| n >= 2 * 1024u64.pow(3));
         let log_allowed = fs::metadata(log).is_ok_and(|m| m.len() <= 4 * 1024 * 1024);
         let reason = stop_reason(
@@ -514,7 +527,7 @@ impl Chat {
             log_allowed,
             deadline,
         );
-        samples.push(json!({"elapsed_ms":start.elapsed().as_millis() as u64,"memory":memory,"memory_allowed":memory_allowed,"warning_used_ms":pressure.warning_used_ms,"baseline_swap_bytes":baseline,"stop_reason":reason}));
+        samples.push(json!({"elapsed_ms":now,"memory":memory,"critical_pressure_probe":self.critical_probe,"memory_allowed":memory_allowed,"warning_used_ms":pressure.warning_used_ms,"baseline_swap_bytes":baseline,"stop_reason":reason}));
         if let Some(sample) = samples.last_mut() {
             sample["owned_rss_bytes_by_pid"] = owner
                 .child
@@ -749,16 +762,41 @@ pub(crate) async fn desktop(
     let home = PathBuf::from(std::env::var_os("HOME").ok_or("desktop_home_required")?)
         .canonicalize()
         .map_err(|_| "desktop_home_required")?;
-    let environment = Environment::portable(
-        config.data_dir.clone(),
-        Coordination::portable(&home, &config.coordination_dir)?,
+    let port = crate::settings_menu::desktop_port(
+        control
+            .setup_home
+            .as_deref()
+            .ok_or("invalid_desktop_setup_home")?,
     )?;
+    let mut coordination = Coordination::portable(&home, &config.coordination_dir)?;
+    if cfg!(debug_assertions)
+        && port == 8016
+        && config
+            .coordination_dir
+            .join("pair-cleanup-uncertain.json")
+            .symlink_metadata()
+            .is_ok()
+    {
+        // This is a dev-only operator decision, not retrospective cleanup proof.
+        // Keep historical files and use a separate journal for new work.
+        if !inventory(11434)
+            .await
+            .map_err(|_| "development_review_inventory_unavailable")?["models"]
+            .as_array()
+            .is_some_and(Vec::is_empty)
+            || native::memory()["pressure"] != 1
+        {
+            return Err("development_review_shared_model_or_pressure".into());
+        }
+        coordination = coordination.with_development_review()?;
+    }
+    let environment = Environment::portable(config.data_dir.clone(), coordination)?;
     let root = config
         .data_dir
         .join(format!("run-{}", uuid::Uuid::new_v4()));
     let lan = LanConfig {
         history: config.data_dir.clone(),
-        address: "127.0.0.1:8015".parse().unwrap(),
+        address: std::net::SocketAddr::from(([127, 0, 0, 1], port)),
         prefix: 32,
         certificate: PathBuf::new(),
         private_key: PathBuf::new(),
@@ -863,10 +901,21 @@ async fn run_mode(
         host != Ipv4Addr::LOCALHOST || config.prefix != 32
     } else {
         !host.is_private() || !(8..=30).contains(&config.prefix)
-    }) || config.address.port() != 8015
-    {
+    }) || (if local {
+        !matches!(config.address.port(), 8015 | 8016)
+    } else {
+        config.address.port() != 8015
+    }) {
         return Err("explicit_private_LAN_and_port8015_required".into());
     }
+    let requested = std::env::var("SEIYA_DEV_8016_MEMORY_DIAGNOSTIC").ok();
+    let critical_probe = local
+        && development_critical_probe(
+            config.address,
+            portable.is_some(),
+            desktop.as_ref().is_some_and(|d| d.setup_home.is_some()),
+            requested.as_deref(),
+        );
     let acceptor = if local { None } else { Some(tls(&config)?) };
     if !config.history.is_absolute()
         || config
@@ -1027,6 +1076,7 @@ async fn run_mode(
                 source: source.clone(),
                 binary: binary.clone(),
                 environment: environment.clone(),
+                critical_probe,
             }),
         })
     } else {
@@ -1039,6 +1089,7 @@ async fn run_mode(
         source,
         binary,
         environment,
+        critical_probe,
     });
     struct NoDrafts;
     impl image_jobs::Admission for NoDrafts {
@@ -1253,6 +1304,29 @@ mod real_chat_image;
 mod tests {
     use super::*;
     #[test]
+    fn critical_probe_requires_exact_debug_desktop_8016_opt_in() {
+        let test: SocketAddr = "127.0.0.1:8016".parse().unwrap();
+        assert_eq!(
+            development_critical_probe(test, true, true, Some("critical-only")),
+            cfg!(debug_assertions)
+        );
+        for (address, portable, desktop, requested) in [
+            ("127.0.0.1:8015", true, true, Some("critical-only")),
+            ("192.168.1.4:8016", true, true, Some("critical-only")),
+            ("127.0.0.1:8016", false, true, Some("critical-only")),
+            ("127.0.0.1:8016", true, false, Some("critical-only")),
+            ("127.0.0.1:8016", true, true, Some("anything-else")),
+            ("127.0.0.1:8016", true, true, None),
+        ] {
+            assert!(!development_critical_probe(
+                address.parse().unwrap(),
+                portable,
+                desktop,
+                requested
+            ));
+        }
+    }
+    #[test]
     fn absent_optional_auxiliary_does_not_require_a_second_model_but_explicit_request_does() {
         let root =
             std::env::temp_dir().join(format!("seiya-optional-model-{}", uuid::Uuid::new_v4()));
@@ -1332,6 +1406,34 @@ mod tests {
             residency: Residency::new(),
         })
     }
+    #[test]
+    fn chat_policy_uses_configured_swap_growth_at_boundary_in_both_modes() {
+        let settings = crate::diagnostics::Diagnostics::memory(Arc::new(
+            || json!({"pressure":1,"swap_bytes":0}),
+        ));
+        let configured = settings.limits();
+        assert_eq!(configured.chat_swap_growth_mib, 4000);
+        let limits = TrialLimits {
+            warning_budget_ms: configured.chat_warning_ms,
+            max_swap_growth_mib: configured.chat_swap_growth_mib,
+            ..Default::default()
+        };
+        let baseline = 9000 * 1024 * 1024u64;
+        for pressure in [1, 4] {
+            let at_cap = json!({"pressure":pressure,"swap_bytes":baseline + 4000 * 1024 * 1024});
+            let over_cap =
+                json!({"pressure":pressure,"swap_bytes":baseline + 4000 * 1024 * 1024 + 1});
+            let mut window = PressureWindow::new(0);
+            if pressure == 4 {
+                assert!(window.observe_development_critical(100, &at_cap, baseline, &limits));
+                assert!(!window.observe_development_critical(200, &over_cap, baseline, &limits));
+                assert!(!PressureWindow::new(0).observe(100, &at_cap, baseline, &limits));
+            } else {
+                assert!(window.observe(100, &at_cap, baseline, &limits));
+                assert!(!window.observe(200, &over_cap, baseline, &limits));
+            }
+        }
+    }
     #[tokio::test]
     async fn modalities_share_one_slot_and_release_only_after_turn() {
         let s = session();
@@ -1406,6 +1508,7 @@ mod tests {
             source: root.join("absent-models"),
             binary: root.join("absent-binary"),
             environment: Environment::legacy(),
+            critical_probe: false,
         };
         let error = chat
             .turn(

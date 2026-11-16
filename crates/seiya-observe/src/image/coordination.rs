@@ -1,8 +1,9 @@
 //! Cooperative model ownership. Never unlink a lock or recover quarantine here.
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
-    io::Write,
+    io::{Read, Write},
     os::{
         fd::AsRawFd,
         unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
@@ -17,11 +18,137 @@ const MARKERS: [&str; 2] = [
     "image-cleanup-uncertain.json",
     "pair-cleanup-uncertain.json",
 ];
+const TEST_INFLIGHT: &str = "native-model-test-8016.inflight";
+const TEST_QUARANTINE: &str = "test-cleanup-uncertain.json";
+const REVIEWED_INFLIGHT: &str = "native-model-test-8016-reviewed.inflight";
+const REVIEWED_QUARANTINE: &str = "test-reviewed-cleanup-uncertain.json";
+fn marker_present(path: &Path) -> Result<bool, String> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(_) => Err("review_marker_observation_failed".into()),
+    }
+}
+fn private_marker(path: &Path) -> Result<Vec<u8>, String> {
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(path)
+        .map_err(|_| "review_marker_open")?;
+    let m = file.metadata().map_err(|_| "review_marker_metadata")?;
+    let current = fs::symlink_metadata(path).map_err(|_| "review_marker_changed")?;
+    if !m.is_file()
+        || m.nlink() != 1
+        || m.permissions().mode() & 0o077 != 0
+        || m.len() > 4096
+        || m.dev() != current.dev()
+        || m.ino() != current.ino()
+    {
+        return Err("review_marker_invalid".into());
+    }
+    let mut bytes = Vec::new();
+    (&mut file)
+        .take(4097)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "review_marker_read")?;
+    if bytes.len() > 4096 {
+        return Err("review_marker_limit".into());
+    }
+    Ok(bytes)
+}
+
+#[derive(Clone)]
+struct Reviewed {
+    intent: [u8; 32],
+    quarantine: [u8; 32],
+    evidence: PathBuf,
+    owner: [u8; 32],
+    cleanup: [u8; 32],
+    pid: u32,
+    port: u16,
+    test: Option<ReviewedTest>,
+}
+
+#[derive(Clone)]
+struct ReviewedTest {
+    intent: [u8; 32],
+    quarantine: [u8; 32],
+    evidence: PathBuf,
+    owner: [u8; 32],
+    cleanup: [u8; 32],
+    pid: u32,
+    port: u16,
+}
+
+fn review_test(stable: &Path, base: &Path) -> Result<Option<ReviewedTest>, String> {
+    let pending = marker_present(&stable.join(TEST_INFLIGHT))?;
+    let quarantined = marker_present(&stable.join(TEST_QUARANTINE))?;
+    if !pending && !quarantined {
+        return Ok(None);
+    }
+    if !pending || !quarantined {
+        return Err("review_test_incomplete".into());
+    }
+    let intent = private_marker(&stable.join(TEST_INFLIGHT))?;
+    let marker = private_marker(&stable.join(TEST_QUARANTINE))?;
+    let value: Value = serde_json::from_slice(&intent).map_err(|_| "review_test_intent_json")?;
+    let quarantine: Value =
+        serde_json::from_slice(&marker).map_err(|_| "review_test_quarantine_json")?;
+    let pid = quarantine["pid"]
+        .as_u64()
+        .and_then(|v| u32::try_from(v).ok())
+        .filter(|v| *v > 0 && *v <= i32::MAX as u32)
+        .ok_or("review_test_pid_invalid")?;
+    let evidence = Path::new(
+        quarantine["evidence"]
+            .as_str()
+            .ok_or("review_test_evidence")?,
+    );
+    let canonical = evidence
+        .canonicalize()
+        .map_err(|_| "review_test_evidence")?;
+    if canonical != evidence || !canonical.starts_with(base) || canonical == base {
+        return Err("review_test_evidence_outside_data".into());
+    }
+    let owner_bytes = private_marker(&canonical.join("owner.json"))?;
+    let cleanup_bytes = private_marker(&canonical.join("cleanup.json"))?;
+    let owner: Value =
+        serde_json::from_slice(&owner_bytes).map_err(|_| "review_test_owner_json")?;
+    let cleanup: Value =
+        serde_json::from_slice(&cleanup_bytes).map_err(|_| "review_test_cleanup_json")?;
+    let port = owner["port"]
+        .as_u64()
+        .and_then(|v| u16::try_from(v).ok())
+        .filter(|v| *v >= 49152)
+        .ok_or("review_test_port_invalid")?;
+    if value != serde_json::json!({"version":1,"operation":"ollama","cleanup_confirmed":false})
+        || quarantine["error"] != "OwnershipChanged"
+        || owner["pid"] != pid
+        || cleanup["confirmed"] != false
+        || cleanup["error"] != "OwnershipChanged"
+        || !crate::probes::exited_group_is_empty(pid)
+            .map_err(|_| "review_test_process_unavailable")?
+    {
+        return Err("review_test_unexpected_marker".into());
+    }
+    let _reserved = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))
+        .map_err(|_| "review_test_private_port_busy")?;
+    Ok(Some(ReviewedTest {
+        intent: Sha256::digest(intent).into(),
+        quarantine: Sha256::digest(marker).into(),
+        evidence: canonical,
+        owner: Sha256::digest(owner_bytes).into(),
+        cleanup: Sha256::digest(cleanup_bytes).into(),
+        pid,
+        port,
+    }))
+}
 
 #[derive(Clone)]
 pub struct Coordination {
     stable: Option<PathBuf>,
     legacy: PathBuf,
+    reviewed: Option<Reviewed>,
 }
 
 impl Coordination {
@@ -30,13 +157,125 @@ impl Coordination {
         Self {
             legacy: directory.join("absent-legacy"),
             stable: Some(directory),
+            reviewed: None,
         }
     }
     pub fn legacy() -> Self {
         Self {
             stable: None,
             legacy: Path::new(LEGACY_BASE).join("seiya-host-model-coordination"),
+            reviewed: None,
         }
+    }
+
+    /// Only an explicitly reviewed debug desktop instance may select the
+    /// alternate journal. The old observation remains unchanged and visible.
+    pub fn with_development_review(mut self) -> Result<Self, String> {
+        if !cfg!(debug_assertions) || self.stable.is_none() {
+            return Err("development_review_not_allowed".into());
+        }
+        let stable = self.stable.as_ref().unwrap();
+        let original: Value = serde_json::from_slice(&private_marker(
+            &stable.join("pair-cleanup-uncertain.json"),
+        )?)
+        .map_err(|_| "review_quarantine_json")?;
+        let pid = original["pid"]
+            .as_u64()
+            .and_then(|v| u32::try_from(v).ok())
+            .filter(|v| *v > 0 && *v <= i32::MAX as u32)
+            .ok_or("review_pid_invalid")?;
+        let base = stable.parent().ok_or("review_home")?.join("data");
+        let evidence = Path::new(original["evidence"].as_str().ok_or("review_evidence")?);
+        let canonical = evidence.canonicalize().map_err(|_| "review_evidence")?;
+        if canonical != evidence || !canonical.starts_with(&base) || canonical == base {
+            return Err("review_evidence_outside_data".into());
+        }
+        let owner: Value = serde_json::from_slice(&private_marker(&canonical.join("owner.json"))?)
+            .map_err(|_| "review_owner_json")?;
+        let port = owner["port"]
+            .as_u64()
+            .and_then(|v| u16::try_from(v).ok())
+            .filter(|v| *v >= 49152)
+            .ok_or("review_port_invalid")?;
+        let owner_hash: [u8; 32] =
+            Sha256::digest(private_marker(&canonical.join("owner.json"))?).into();
+        let cleanup_hash: [u8; 32] =
+            Sha256::digest(private_marker(&canonical.join("cleanup.json"))?).into();
+        if !crate::probes::exited_group_is_empty(pid).map_err(|_| "review_process_unavailable")? {
+            return Err("review_process_or_group_present".into());
+        }
+        let _reserved = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))
+            .map_err(|_| "review_private_port_busy")?;
+        let test = review_test(stable, &base)?;
+        let mut fingerprints = Vec::new();
+        for domain in [self.stable.as_ref().unwrap(), &self.legacy] {
+            private_directory(domain)?;
+            let intent = private_marker(&domain.join(NATIVE_INFLIGHT))?;
+            let marker = private_marker(&domain.join("pair-cleanup-uncertain.json"))?;
+            let value: Value = serde_json::from_slice(&intent).map_err(|_| "review_intent_json")?;
+            let quarantine: Value =
+                serde_json::from_slice(&marker).map_err(|_| "review_quarantine_json")?;
+            let evidence = Path::new(quarantine["evidence"].as_str().ok_or("review_evidence")?);
+            let canonical = evidence.canonicalize().map_err(|_| "review_evidence")?;
+            if canonical != evidence || !canonical.starts_with(&base) || canonical == base {
+                return Err("review_evidence_outside_data".into());
+            }
+            let owner: Value =
+                serde_json::from_slice(&private_marker(&canonical.join("owner.json"))?)
+                    .map_err(|_| "review_owner_json")?;
+            let cleanup: Value =
+                serde_json::from_slice(&private_marker(&canonical.join("cleanup.json"))?)
+                    .map_err(|_| "review_cleanup_json")?;
+            if value
+                != serde_json::json!({"version":1,"operation":"ollama","cleanup_confirmed":false})
+                || quarantine["pid"] != pid
+                || quarantine["error"] != "RootExited"
+                || owner["pid"] != pid
+                || owner["port"] != port
+                || cleanup["confirmed"] != false
+                || cleanup["error"] != "RootExited"
+                || marker_present(&domain.join("image-cleanup-uncertain.json"))?
+                || marker_present(&domain.join(REVIEWED_INFLIGHT))?
+                || marker_present(&domain.join(REVIEWED_QUARANTINE))?
+            {
+                return Err("review_unexpected_marker".into());
+            }
+            if let Some(review) = &test {
+                if Sha256::digest(private_marker(&domain.join(TEST_INFLIGHT))?).as_slice()
+                    != review.intent
+                    || Sha256::digest(private_marker(&domain.join(TEST_QUARANTINE))?).as_slice()
+                        != review.quarantine
+                {
+                    return Err("review_test_domains_differ".into());
+                }
+            } else if marker_present(&domain.join(TEST_INFLIGHT))?
+                || marker_present(&domain.join(TEST_QUARANTINE))?
+            {
+                return Err("review_unexpected_marker".into());
+            }
+            for entry in fs::read_dir(domain).map_err(|_| "review_listing")? {
+                let name = entry.map_err(|_| "review_entry")?.file_name();
+                let name = name.to_string_lossy();
+                if name.starts_with("http-") && name.ends_with(".inflight") {
+                    return Err("review_http_pending".into());
+                }
+            }
+            fingerprints.push((Sha256::digest(intent).into(), Sha256::digest(marker).into()));
+        }
+        if fingerprints[0] != fingerprints[1] {
+            return Err("review_domains_differ".into());
+        }
+        self.reviewed = Some(Reviewed {
+            intent: fingerprints[0].0,
+            quarantine: fingerprints[0].1,
+            evidence: canonical,
+            owner: owner_hash,
+            cleanup: cleanup_hash,
+            pid,
+            port,
+            test,
+        });
+        Ok(self)
     }
 
     /// The config cannot elect a different authority for each profile.
@@ -65,6 +304,11 @@ impl Coordination {
         let mut lease = ModelLease {
             files: Vec::new(),
             domains: Vec::new(),
+            journal: match &self.reviewed {
+                Some(review) if review.test.is_some() => REVIEWED_INFLIGHT,
+                Some(_) => TEST_INFLIGHT,
+                None => NATIVE_INFLIGHT,
+            },
         };
         for (directory, create) in domains {
             private_directory(directory)?;
@@ -97,6 +341,49 @@ impl Coordination {
             lease.domains.push(directory.clone());
         }
         for domain in &lease.domains {
+            if let Some(review) = &self.reviewed {
+                if Sha256::digest(private_marker(&review.evidence.join("owner.json"))?).as_slice()
+                    != review.owner
+                    || Sha256::digest(private_marker(&review.evidence.join("cleanup.json"))?)
+                        .as_slice()
+                        != review.cleanup
+                {
+                    return Err("review_evidence_changed".into());
+                }
+                if !crate::probes::exited_group_is_empty(review.pid)
+                    .map_err(|_| "review_process_unavailable")?
+                    || std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, review.port))
+                        .is_err()
+                {
+                    return Err("review_original_process_or_port_present".into());
+                }
+                if Sha256::digest(private_marker(&domain.join(NATIVE_INFLIGHT))?).as_slice()
+                    != review.intent
+                    || Sha256::digest(private_marker(&domain.join("pair-cleanup-uncertain.json"))?)
+                        .as_slice()
+                        != review.quarantine
+                {
+                    return Err("review_historical_records_changed".into());
+                }
+                if let Some(test) = &review.test {
+                    if Sha256::digest(private_marker(&test.evidence.join("owner.json"))?).as_slice()
+                        != test.owner
+                        || Sha256::digest(private_marker(&test.evidence.join("cleanup.json"))?)
+                            .as_slice()
+                            != test.cleanup
+                        || !crate::probes::exited_group_is_empty(test.pid)
+                            .map_err(|_| "review_test_process_unavailable")?
+                        || std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, test.port))
+                            .is_err()
+                        || Sha256::digest(private_marker(&domain.join(TEST_INFLIGHT))?).as_slice()
+                            != test.intent
+                        || Sha256::digest(private_marker(&domain.join(TEST_QUARANTINE))?).as_slice()
+                            != test.quarantine
+                    {
+                        return Err("review_test_records_changed".into());
+                    }
+                }
+            }
             // Current native hosts also honor pending external HTTP operations.
             // Never inspect their contents as authority or recover them here.
             let entries = fs::read_dir(domain).map_err(|_| "quarantine_observation_failed")?;
@@ -108,14 +395,25 @@ impl Coordination {
                     .map_err(|_| "quarantine_observation_failed")?
                     .file_name();
                 let name = name.to_string_lossy();
-                if name == NATIVE_INFLIGHT {
+                if name == NATIVE_INFLIGHT && self.reviewed.is_none() {
                     return Err("native_model_pending_operator_review_required".into());
+                }
+                if (name == TEST_INFLIGHT || name == TEST_QUARANTINE)
+                    && self.reviewed.as_ref().is_none_or(|r| r.test.is_none())
+                {
+                    return Err("test_model_pending_operator_review_required".into());
+                }
+                if name == REVIEWED_INFLIGHT || name == REVIEWED_QUARANTINE {
+                    return Err("test_model_pending_operator_review_required".into());
                 }
                 if name.starts_with("http-") && name.ends_with(".inflight") {
                     return Err("external_http_pending_operator_review_required".into());
                 }
             }
             for marker in MARKERS {
+                if self.reviewed.is_some() && marker == "pair-cleanup-uncertain.json" {
+                    continue;
+                }
                 match fs::symlink_metadata(domain.join(marker)) {
                     Ok(_) => {
                         return Err("model_cleanup_quarantined_operator_review_required".into())
@@ -132,13 +430,16 @@ impl Coordination {
 pub struct ModelLease {
     files: Vec<File>,
     domains: Vec<PathBuf>,
+    journal: &'static str,
 }
 
 impl ModelLease {
     /// Persist before spawning an owned model process. The caller must retain
     /// this model lease until native operation cleanup/intent confirmation.
     pub fn begin_native(&self, operation: &str) -> Result<NativeOperation, String> {
-        if !matches!(operation, "ollama" | "image") {
+        if !matches!(operation, "ollama" | "image")
+            || self.journal == REVIEWED_INFLIGHT && operation != "ollama"
+        {
             return Err("native_operation_invalid".into());
         }
         let bytes = serde_json::to_vec(
@@ -154,7 +455,7 @@ impl ModelLease {
                 .create_new(true)
                 .mode(0o600)
                 .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-                .open(directory.join(NATIVE_INFLIGHT))
+                .open(directory.join(self.journal))
                 .map_err(|_| "native_intent_create")?;
             // If any persistence step fails, leave every observed intent in
             // place. No process may be spawned after this error.
@@ -168,13 +469,21 @@ impl ModelLease {
         if records.is_empty() {
             return Err("native_intent_authority_required".into());
         }
-        Ok(NativeOperation { records })
+        Ok(NativeOperation {
+            records,
+            journal: self.journal,
+        })
     }
     /// Caller must retain/leak the lease if this cannot durably mark every domain.
     pub fn quarantine(&self, name: &str, marker: &Value) -> Result<(), String> {
         if !MARKERS.contains(&name) {
             return Err("invalid_quarantine_marker".into());
         }
+        let name = match self.journal {
+            TEST_INFLIGHT => TEST_QUARANTINE,
+            REVIEWED_INFLIGHT => REVIEWED_QUARANTINE,
+            _ => name,
+        };
         let bytes = serde_json::to_vec_pretty(marker).map_err(|_| "quarantine_encode")?;
         let mut failed = false;
         for directory in &self.domains {
@@ -203,13 +512,14 @@ impl ModelLease {
 /// that a model was unloaded. Only owned native cleanup may call confirm().
 pub struct NativeOperation {
     records: Vec<(PathBuf, File)>,
+    journal: &'static str,
 }
 impl NativeOperation {
     pub fn confirm(self) -> Result<(), String> {
-        fn unchanged(directory: &Path, file: &File) -> Result<(), String> {
+        fn unchanged(directory: &Path, file: &File, journal: &str) -> Result<(), String> {
             private_directory(directory)?;
             let expected = file.metadata().map_err(|_| "native_intent_metadata")?;
-            let current = fs::symlink_metadata(directory.join(NATIVE_INFLIGHT))
+            let current = fs::symlink_metadata(directory.join(journal))
                 .map_err(|_| "native_intent_missing")?;
             if !current.is_file()
                 || current.file_type().is_symlink()
@@ -222,11 +532,11 @@ impl NativeOperation {
             Ok(())
         }
         for (directory, file) in &self.records {
-            unchanged(directory, file)?;
+            unchanged(directory, file, self.journal)?;
         }
         for (directory, file) in &self.records {
-            unchanged(directory, file)?;
-            fs::remove_file(directory.join(NATIVE_INFLIGHT))
+            unchanged(directory, file, self.journal)?;
+            fs::remove_file(directory.join(self.journal))
                 .and_then(|_| File::open(directory)?.sync_all())
                 .map_err(|_| "native_intent_confirm")?;
         }
@@ -318,6 +628,7 @@ mod tests {
                 coord: Coordination {
                     stable: Some(root.join("stable")),
                     legacy: root.join("legacy"),
+                    reviewed: None,
                 },
                 root,
             }
@@ -328,12 +639,265 @@ mod tests {
             fs::remove_dir_all(&self.root).unwrap();
         }
     }
+    #[cfg(debug_assertions)]
+    #[test]
+    fn reviewed_dev_uses_new_journal_without_changing_historical_records() {
+        let f = Fixture::new();
+        let pid = i32::MAX as u32 - 11;
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        assert!(port >= 49152);
+        let evidence = f.root.join("data/run-synthetic/chat-synthetic");
+        fs::create_dir_all(&evidence).unwrap();
+        for (name, value) in [
+            ("owner.json", serde_json::json!({"pid":pid,"port":port})),
+            (
+                "cleanup.json",
+                serde_json::json!({"confirmed":false,"error":"RootExited"}),
+            ),
+        ] {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(evidence.join(name))
+                .unwrap();
+            file.write_all(value.to_string().as_bytes()).unwrap();
+        }
+        let intent =
+            serde_json::json!({"version":1,"operation":"ollama","cleanup_confirmed":false})
+                .to_string();
+        let quarantine =
+            serde_json::json!({"pid":pid,"error":"RootExited","evidence":evidence}).to_string();
+        for domain in ["stable", "legacy"] {
+            for (name, data) in [
+                (NATIVE_INFLIGHT, &intent),
+                ("pair-cleanup-uncertain.json", &quarantine),
+            ] {
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(f.root.join(domain).join(name))
+                    .unwrap();
+                file.write_all(data.as_bytes()).unwrap();
+            }
+        }
+        assert!(f.coord.acquire().is_err());
+        let occupied = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).unwrap();
+        assert!(f.coord.clone().with_development_review().is_err());
+        drop(occupied);
+        let legacy_marker = f.root.join("legacy/pair-cleanup-uncertain.json");
+        fs::write(&legacy_marker, b"different record").unwrap();
+        assert!(f.coord.clone().with_development_review().is_err());
+        fs::write(&legacy_marker, quarantine.as_bytes()).unwrap(); // fixture only
+        let reviewed = f.coord.clone().with_development_review().unwrap();
+        assert!(Coordination {
+            stable: None,
+            legacy: f.root.join("legacy"),
+            reviewed: None
+        }
+        .acquire()
+        .is_err());
+        let lease = reviewed.acquire().unwrap();
+        lease.begin_native("ollama").unwrap().confirm().unwrap();
+        assert!(!f.root.join("stable").join(TEST_INFLIGHT).exists());
+        assert!(f.root.join("stable").join(NATIVE_INFLIGHT).exists());
+        assert!(f.coord.acquire().is_err());
+        let intent_new = lease.begin_native("ollama").unwrap();
+        assert!(f.root.join("stable").join(TEST_INFLIGHT).exists());
+        drop(intent_new);
+        drop(lease);
+        assert!(reviewed.acquire().is_err()); // unconfirmed NEW operation, never ignored
+        for domain in ["stable", "legacy"] {
+            assert_eq!(
+                fs::read_to_string(f.root.join(domain).join(NATIVE_INFLIGHT)).unwrap(),
+                intent
+            );
+            assert_eq!(
+                fs::read_to_string(f.root.join(domain).join("pair-cleanup-uncertain.json"))
+                    .unwrap(),
+                quarantine
+            );
+            fs::remove_file(f.root.join(domain).join(TEST_INFLIGHT)).unwrap(); // fixture only
+        }
+        let lease = reviewed.acquire().unwrap();
+        lease
+            .quarantine(
+                "pair-cleanup-uncertain.json",
+                &serde_json::json!({"synthetic":true}),
+            )
+            .unwrap();
+        drop(lease);
+        assert!(reviewed.acquire().is_err());
+        assert!(f.coord.acquire().is_err());
+        for domain in ["stable", "legacy"] {
+            fs::remove_file(f.root.join(domain).join(TEST_QUARANTINE)).unwrap();
+            // fixture only
+        }
+        let path = f.root.join("stable").join(NATIVE_INFLIGHT);
+        fs::write(&path, b"changed historical record").unwrap();
+        assert!(reviewed.acquire().is_err());
+        fs::write(&path, intent.as_bytes()).unwrap();
+        fs::write(evidence.join("cleanup.json"), b"changed evidence").unwrap();
+        assert!(reviewed.acquire().is_err());
+    }
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn release_rejects_development_review() {
+        let f = Fixture::new();
+        assert!(f.coord.clone().with_development_review().is_err());
+    }
+    #[cfg(debug_assertions)]
+    #[test]
+    fn second_review_preserves_both_histories_and_rejects_new_uncertainty() {
+        let f = Fixture::new();
+        let old_pid = i32::MAX as u32 - 31;
+        let new_pid = i32::MAX as u32 - 32;
+        let old_reservation = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let new_reservation = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = old_reservation.local_addr().unwrap().port();
+        let new_port = new_reservation.local_addr().unwrap().port();
+        assert!(port >= 49152);
+        assert!(new_port >= 49152);
+        drop(old_reservation);
+        drop(new_reservation);
+        let old = f.root.join("data/run-old/chat-old");
+        let new = f.root.join("data/run-new/chat-new");
+        for (evidence, pid, error) in [
+            (&old, old_pid, "RootExited"),
+            (&new, new_pid, "OwnershipChanged"),
+        ] {
+            fs::create_dir_all(evidence).unwrap();
+            for (name, value) in [
+                (
+                    "owner.json",
+                    serde_json::json!({"pid":pid,"port":if pid == old_pid { port } else { new_port }}),
+                ),
+                (
+                    "cleanup.json",
+                    serde_json::json!({"confirmed":false,"error":error}),
+                ),
+            ] {
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(evidence.join(name))
+                    .unwrap();
+                file.write_all(value.to_string().as_bytes()).unwrap();
+            }
+        }
+        let intent =
+            serde_json::json!({"version":1,"operation":"ollama","cleanup_confirmed":false})
+                .to_string();
+        let old_marker =
+            serde_json::json!({"pid":old_pid,"error":"RootExited","evidence":old}).to_string();
+        let new_marker =
+            serde_json::json!({"pid":new_pid,"error":"OwnershipChanged","evidence":new})
+                .to_string();
+        for domain in ["stable", "legacy"] {
+            for (name, bytes) in [
+                (NATIVE_INFLIGHT, &intent),
+                ("pair-cleanup-uncertain.json", &old_marker),
+                (TEST_INFLIGHT, &intent),
+                (TEST_QUARANTINE, &new_marker),
+            ] {
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(f.root.join(domain).join(name))
+                    .unwrap();
+                file.write_all(bytes.as_bytes()).unwrap();
+            }
+        }
+        let marker = f.root.join("legacy").join(TEST_QUARANTINE);
+        fs::write(&marker, b"foreign").unwrap();
+        assert!(f.coord.clone().with_development_review().is_err());
+        fs::write(&marker, new_marker.as_bytes()).unwrap();
+        let stable_marker = f.root.join("stable").join(TEST_QUARANTINE);
+        fs::write(
+            &stable_marker,
+            new_marker.replace("OwnershipChanged", "RootExited"),
+        )
+        .unwrap();
+        assert!(f.coord.clone().with_development_review().is_err());
+        fs::write(&stable_marker, new_marker.as_bytes()).unwrap();
+        let occupied =
+            std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, new_port)).unwrap();
+        assert!(f.coord.clone().with_development_review().is_err());
+        drop(occupied);
+        let reviewed = f.coord.clone().with_development_review().unwrap();
+        assert!(f.coord.acquire().is_err());
+        let occupied =
+            std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, new_port)).unwrap();
+        assert!(reviewed.acquire().is_err());
+        drop(occupied);
+        let lease = reviewed.acquire().unwrap();
+        assert!(lease.begin_native("image").is_err());
+        lease.begin_native("ollama").unwrap().confirm().unwrap();
+        for domain in ["stable", "legacy"] {
+            let path = f.root.join(domain);
+            assert!(!path.join(REVIEWED_INFLIGHT).exists());
+            assert_eq!(
+                fs::read_to_string(path.join(TEST_INFLIGHT)).unwrap(),
+                intent
+            );
+            assert_eq!(
+                fs::read_to_string(path.join(TEST_QUARANTINE)).unwrap(),
+                new_marker
+            );
+            assert_eq!(
+                fs::read_to_string(path.join(NATIVE_INFLIGHT)).unwrap(),
+                intent
+            );
+            assert_eq!(
+                fs::read_to_string(path.join("pair-cleanup-uncertain.json")).unwrap(),
+                old_marker
+            );
+        }
+        lease
+            .quarantine(
+                "pair-cleanup-uncertain.json",
+                &serde_json::json!({"synthetic":true}),
+            )
+            .unwrap();
+        drop(lease);
+        assert!(reviewed.acquire().is_err());
+        for domain in ["stable", "legacy"] {
+            fs::remove_file(f.root.join(domain).join(REVIEWED_QUARANTINE)).unwrap();
+            // fixture only
+        }
+        let path = new.join("cleanup.json");
+        fs::write(&path, b"changed").unwrap();
+        assert!(reviewed.acquire().is_err());
+        assert!(f.coord.clone().with_development_review().is_err());
+    }
+    #[cfg(all(target_os = "macos", debug_assertions))]
+    #[test]
+    #[ignore = "explicit operator consent required: reads real coordination metadata; no model start"]
+    fn real_review_only_observes_historical_markers_without_model_start() {
+        let home = PathBuf::from(std::env::var_os("HOME").unwrap())
+            .canonicalize()
+            .unwrap();
+        let stable = home.join("Library/Application Support/Seiya/coordination");
+        let coord = Coordination::portable(&home, &stable).unwrap();
+        assert!(coord.acquire().is_err());
+        let reviewed = coord.with_development_review().unwrap();
+        let lease = reviewed.acquire().unwrap();
+        drop(lease);
+    }
     #[test]
     fn shared_domain_excludes_old_new_and_releases_without_unlink() {
         let f = Fixture::new();
         let old = Coordination {
             stable: None,
             legacy: f.root.join("legacy"),
+            reviewed: None,
         };
         let legacy = old.acquire().unwrap();
         assert!(f.coord.acquire().is_err());
@@ -364,7 +928,8 @@ mod tests {
         );
         assert!(Coordination {
             stable: None,
-            legacy: f.root.join("legacy")
+            legacy: f.root.join("legacy"),
+            reviewed: None
         }
         .acquire()
         .is_err());
@@ -437,7 +1002,8 @@ mod tests {
         assert!(f.coord.acquire().is_err());
         assert!(Coordination {
             stable: None,
-            legacy: f.root.join("legacy")
+            legacy: f.root.join("legacy"),
+            reviewed: None
         }
         .acquire()
         .is_err());
@@ -461,12 +1027,14 @@ mod tests {
         let coord = Coordination {
             legacy: legacy.clone(),
             stable: f.coord.stable.clone(),
+            reviewed: None,
         };
         assert!(coord.acquire().is_ok());
         assert!(!legacy.exists());
         assert!(Coordination {
             legacy,
-            stable: None
+            stable: None,
+            reviewed: None
         }
         .acquire()
         .is_err());

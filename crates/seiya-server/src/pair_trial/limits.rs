@@ -79,10 +79,34 @@ impl PressureWindow {
         }
     }
     pub fn observe(&mut self, now: u64, sample: &Value, baseline: u64, p: &TrialLimits) -> bool {
+        self.observe_with_mode(now, sample, baseline, p, false)
+    }
+    /// Explicit debug8016 probe only: observe critical pressure without using
+    /// it as a stop signal. Stale samples, warning budget and swap still stop.
+    pub fn observe_development_critical(
+        &mut self,
+        now: u64,
+        sample: &Value,
+        baseline: u64,
+        p: &TrialLimits,
+    ) -> bool {
+        self.observe_with_mode(now, sample, baseline, p, true)
+    }
+    fn observe_with_mode(
+        &mut self,
+        now: u64,
+        sample: &Value,
+        baseline: u64,
+        p: &TrialLimits,
+        critical_probe: bool,
+    ) -> bool {
         let Some(delta) = now.checked_sub(self.previous_ms).filter(|n| *n <= 1000) else {
             return false;
         };
-        let Some(pressure) = sample["pressure"].as_u64().filter(|n| *n == 1 || *n == 2) else {
+        let Some(pressure) = sample["pressure"]
+            .as_u64()
+            .filter(|n| *n == 1 || *n == 2 || critical_probe && *n == 4)
+        else {
             return false;
         };
         if pressure == 2 || self.previous_pressure == 2 {
@@ -157,5 +181,46 @@ mod tests {
             0,
             &TrialLimits::default()
         ));
+    }
+    #[test]
+    fn critical_probe_keeps_swap_warning_and_stale_limits() {
+        let p = TrialLimits {
+            warning_budget_ms: 1000,
+            ..TrialLimits::default()
+        };
+        let mut w = PressureWindow::new(0);
+        assert!(w.observe_development_critical(100, &json!({"pressure":4,"swap_bytes":0}), 0, &p));
+        assert!(!w.observe_development_critical(
+            200,
+            &json!({"pressure":4,"swap_bytes":513*1024*1024}),
+            0,
+            &p
+        ));
+        assert!(!w.observe_development_critical(
+            1201,
+            &json!({"pressure":4,"swap_bytes":0}),
+            0,
+            &p
+        ));
+        assert!(!w.observe_development_critical(
+            150,
+            &json!({"pressure":null,"swap_bytes":0}),
+            0,
+            &p
+        ));
+        let mut warning = PressureWindow::new(0);
+        assert!(warning.observe_development_critical(
+            500,
+            &json!({"pressure":2,"swap_bytes":0}),
+            0,
+            &p
+        ));
+        assert!(!warning.observe_development_critical(
+            1100,
+            &json!({"pressure":1,"swap_bytes":0}),
+            0,
+            &p
+        ));
+        assert!(!PressureWindow::new(0).observe(100, &json!({"pressure":4,"swap_bytes":0}), 0, &p));
     }
 }

@@ -73,6 +73,8 @@ class WindowsPackagingTests(unittest.TestCase):
                 self.assertIn('Catálogo', zipped.read('LOCAL_MODELS.md').decode())
                 self.assertEqual(zipped.read('CHAT_TEXTO.md'), (builder.ROOT.parent / 'docs/CHAT_TEXTO.md').read_bytes())
                 self.assertIn('"%~dp0seiya-desktop.exe" --launch', launch_cmd)
+                self.assertEqual(zipped.read('seiya.ico'), builder.icon_asset('seiya.ico'))
+                self.assertEqual(info['icons'], {'seiya.ico': hashlib.sha256(zipped.read('seiya.ico')).hexdigest()})
                 self.assertNotIn('--serve', launch_cmd)
                 extracted = root / 'extracted'; zipped.extractall(extracted)
             windows.inspect_payload(extracted)
@@ -97,6 +99,9 @@ class WindowsPackagingTests(unittest.TestCase):
             self.assertIn('PrivilegesRequired=lowest', text)
             self.assertIn('CloseApplications=no', text)
             self.assertIn('Parameters: "--launch"', text)
+            self.assertIn('SetupIconFile={#StageDir}\\seiya.ico', text)
+            self.assertIn('UninstallDisplayIcon={app}\\seiya.ico', text)
+            self.assertEqual(text.count('IconFilename: "{app}\\seiya.ico"'), 2)
             for forbidden in ('[Run]', '[Code]', '[Registry]', '[UninstallDelete]', 'recursesubdirs', '*'):
                 self.assertNotIn(forbidden, text)
             sources = {line.split('\\', 1)[1].split('"', 1)[0] for line in text.splitlines() if line.startswith('Source:')}
@@ -110,6 +115,13 @@ class WindowsPackagingTests(unittest.TestCase):
                 with self.assertRaises(SystemExit): windows.setup(payload, root, root / 'missing.exe')
                 self.assertFalse(run.called)
             (payload / 'extra.py').write_text('not executed')
+            with self.assertRaises(SystemExit): windows.inspect_payload(payload)
+
+    def test_windows_icon_tampering_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); payload = root / 'payload'
+            windows.stage_payload(payload, pe(root / 'bin'))
+            (payload / 'seiya.ico').write_bytes(b'changed')
             with self.assertRaises(SystemExit): windows.inspect_payload(payload)
 
     def test_cli_build_and_inspect_do_not_execute_inputs_or_hash_stale_outputs(self):

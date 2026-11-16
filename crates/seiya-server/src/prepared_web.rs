@@ -1134,6 +1134,10 @@ async fn page(State(state): State<Arc<PreparedWeb>>) -> Response {
             &format!("\n{}\n</script>", include_str!("chat_images_ui.js")),
         )
         .replace(
+            "</script>",
+            &format!("\n{}\n</script>", include_str!("chat_image_progress_ui.js")),
+        )
+        .replace(
             "if(busy||seiyaHistoryDeleting)return;",
             "if(busy||seiyaHistoryDeleting)return;if(seiyaChatImageDeletionBlocked())return;",
         )
@@ -1163,6 +1167,10 @@ async fn page(State(state): State<Arc<PreparedWeb>>) -> Response {
             .replace(
                 "Este chat usa un worker con herramientas.",
                 "Prueba solo de conversación, sin herramientas.",
+            )
+            .replace(
+                "</script>",
+                &format!("\n{}\n</script>", include_str!("solo_jobs_ui.js")),
             )
     } else {
         html
@@ -1200,7 +1208,13 @@ async fn page(State(state): State<Arc<PreparedWeb>>) -> Response {
     let html = if state.diagnostics.is_some() {
         html.replace(
             "</script>",
-            &format!("\n{}\n</script>", include_str!("diagnostics_ui.js")),
+            &format!(
+                "\n{}\n</script>",
+                include_str!("diagnostics_ui.js").replace(
+                    "chat_swap_growth_mib:['LLM (Gemma/Qwen): crecimiento swap (MiB)',64,2048]",
+                    "chat_swap_growth_mib:['LLM (Gemma/Qwen): crecimiento swap (MiB)',64,4000]"
+                )
+            ),
         )
     } else {
         html
@@ -1417,6 +1431,11 @@ mod settings_menu_tests {
         assert!(html.contains("id=\"seiyaModelsSettingsLink\""));
         assert!(html.contains("Configuración general"));
         assert!(html.contains("Configuración de modelos"));
+        assert!(html.contains("const seiyaSoloRenderJobs = renderJobs;"));
+        assert!(html
+            .contains("chat_swap_growth_mib:['LLM (Gemma/Qwen): crecimiento swap (MiB)',64,4000]"));
+        assert!(!html
+            .contains("chat_swap_growth_mib:['LLM (Gemma/Qwen): crecimiento swap (MiB)',64,2048]"));
         assert!(!html.contains("<iframe"));
         assert!(!html.contains("el('prompt').disabled = true"));
         assert_eq!(

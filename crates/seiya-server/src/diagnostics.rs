@@ -26,7 +26,7 @@ impl Default for Limits {
         Self {
             version: 1,
             chat_warning_ms: 10000,
-            chat_swap_growth_mib: 2048,
+            chat_swap_growth_mib: 4000,
             chat_deadline_seconds: 120,
             image_swap_growth_mib: 512,
             image_deadline_seconds: 600,
@@ -38,7 +38,7 @@ impl Limits {
     pub fn validate(&self) -> Result<(), Error> {
         if self.version != 1
             || self.chat_warning_ms > 10000
-            || !(64..=2048).contains(&self.chat_swap_growth_mib)
+            || !(64..=4000).contains(&self.chat_swap_growth_mib)
             || !(10..=120).contains(&self.chat_deadline_seconds)
             || !(64..=512).contains(&self.image_swap_growth_mib)
             || !(30..=600).contains(&self.image_deadline_seconds)
@@ -332,6 +332,62 @@ impl Diagnostics {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn chat_swap_limit_accepts_4000_but_not_4001_and_keeps_image_separate() {
+        let mut limits = Limits::default();
+        assert_eq!(limits.chat_swap_growth_mib, 4000);
+        assert_eq!(limits.image_swap_growth_mib, 512);
+        limits.chat_swap_growth_mib = 64;
+        assert!(limits.validate().is_ok());
+        limits.chat_swap_growth_mib = 63;
+        assert_eq!(limits.validate(), Err(Error::Invalid));
+        limits.chat_swap_growth_mib = 4000;
+        assert!(limits.validate().is_ok());
+        limits.chat_swap_growth_mib = 4001;
+        assert_eq!(limits.validate(), Err(Error::Invalid));
+        limits.chat_swap_growth_mib = 2048;
+        assert!(limits.validate().is_ok());
+        limits.image_swap_growth_mib = 513;
+        assert_eq!(limits.validate(), Err(Error::Invalid));
+    }
+    #[test]
+    fn persisted_2048_stays_until_explicit_cas_update_to_4000() {
+        let root = crate::job_store::tests::directory();
+        let d = Diagnostics::persistent(&root, sampler()).unwrap();
+        let mut previous = d.limits();
+        previous.chat_swap_growth_mib = 2048;
+        d.control(Command::Configure {
+            revision: 1,
+            limits: previous.clone(),
+        })
+        .unwrap();
+        drop(d);
+        let d = Diagnostics::persistent(&root, sampler()).unwrap();
+        assert_eq!(d.limits(), previous);
+        assert_eq!(d.status()["revision"], 2);
+        let mut updated = previous.clone();
+        updated.chat_swap_growth_mib = 4000;
+        assert_eq!(
+            d.control(Command::Configure {
+                revision: 1,
+                limits: updated.clone(),
+            })
+            .unwrap_err(),
+            Error::Conflict
+        );
+        assert_eq!(d.limits(), previous);
+        d.control(Command::Configure {
+            revision: 2,
+            limits: updated.clone(),
+        })
+        .unwrap();
+        drop(d);
+        let d = Diagnostics::persistent(&root, sampler()).unwrap();
+        assert_eq!(d.limits(), updated);
+        assert_eq!(d.status()["revision"], 3);
+        drop(d);
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn portable_initial_features_never_override_a_saved_choice() {
         let d = Diagnostics::memory(sampler());

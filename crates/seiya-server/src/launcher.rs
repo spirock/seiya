@@ -182,13 +182,16 @@ async fn configure(
 }
 
 fn valid_url(url: &str, bootstrap: bool) -> bool {
+    valid_url_at(url, bootstrap, 8015)
+}
+fn valid_url_at(url: &str, bootstrap: bool, port: u16) -> bool {
     let Ok(u) = reqwest::Url::parse(url) else {
         return false;
     };
     let prefix = if bootstrap { "/session/" } else { "/app/" };
     u.scheme() == "http"
         && u.host_str() == Some("127.0.0.1")
-        && u.port() == Some(8015)
+        && u.port() == Some(port)
         && u.username().is_empty()
         && u.password().is_none()
         && u.query().is_none()

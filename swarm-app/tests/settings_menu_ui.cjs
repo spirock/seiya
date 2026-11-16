@@ -16,6 +16,7 @@ class Element{
 const tick=async()=>{await new Promise(r=>setImmediate(r));await new Promise(r=>setImmediate(r));};
 const home='http://127.0.0.1:8015/app/'+ 'b'.repeat(32)+'/';
 function browser({base=home,diagnostics=true}={}){
+ const port=base?.startsWith('http://127.0.0.1:8016/app/')?'8016':'8015';
  const elements={},get=id=>elements[id]??=new Element(),aside=get('aside'),scroll=get('scroll'),calls=[],timers=[],navigations=[];
  scroll.scrollTop=89;scroll.append(get('welcome'),get('history'),get('jobsPanel'),get('imagesPanel'));
  get('history').textContent='Existing conversation';get('prompt').value='Draft while navigating';get('composer').append(get('form'));get('form').append(get('prompt'));get('checkRuntime').onclick=async()=>{};
@@ -30,13 +31,13 @@ function browser({base=home,diagnostics=true}={}){
   document:{getElementById:id=>elements[id]||null,createElement:tag=>new Element(tag),querySelector:s=>s==='aside'?aside:null,querySelectorAll:selector=>{
    const all=[];function visit(n){for(const c of n?.children||[]){all.push(c);visit(c);}}visit(elements.setup);
    if(selector==='#setup button')return all.filter(n=>n.tag==='button');if(selector==='#setup input, #setup textarea')return all.filter(n=>['input','textarea'].includes(n.tag));if(selector==='[data-pick]')return[];return[];
-  }},location:{href:'http://127.0.0.1:8015/app/'+ 'a'.repeat(32)+'/',assign:url=>navigations.push(url)},
+   }},location:{href:'http://127.0.0.1:'+port+'/app/'+ 'a'.repeat(32)+'/',assign:url=>navigations.push(url)},
   Event:class{constructor(type,options){this.type=type;Object.assign(this,options);}preventDefault(){}},MutationObserver:class{observe(){}},
   localStorage:{getItem:()=>null,setItem:()=>{throw Error('no storage writes while navigating');}},setInterval:fn=>{timers.push(fn);return timers.length;},refreshRuntimeStatus:async()=>{},openChat:id=>{context.lastChat=id;},
   seiyaControlFetch:fn=>fn(undefined),seiyaHttpError:(r,d)=>Error(d.error.message),fetch:async(url,options={})=>{
    const target=String(url),frame=options.body?JSON.parse(options.body):null;calls.push({target,frame,options});
    if(target==='/api/diagnostics/v1'){assert.equal(frame.operation,'status');return{ok:true,json:async()=>({version:1,revision:1,limits,features:{images:false,multiagent:false},feature_controls:true,installed_features:{images:true,multiagent:true},observation:{pressure:'normal',swap_bytes:0}})};}
-   assert.ok(target.startsWith(home+'api/'),'only authenticated same-origin model APIs');assert.equal(options.credentials,'same-origin');assert.equal(options.redirect,'error');assert.equal(options.method,undefined,'navigation must not mutate configuration');
+    assert.ok(target.startsWith('http://127.0.0.1:'+port+'/app/'+ 'b'.repeat(32)+'/api/'),'only authenticated same-origin model APIs');assert.equal(options.credentials,'same-origin');assert.equal(options.redirect,'error');assert.equal(options.method,undefined,'navigation must not mutate configuration');
    const data=target.endsWith('/detect')?{baseline:[],draft:{llm_binary:'/synthetic/ollama',model_store:'/synthetic/store',image_binary:'',image_assets:'',roles:{brain:'gemma4:e2b-mlx',workers:[],image:''}}}:{platform:'macos',architecture:'arm64',runtime_available:true,phase:'running'};
    return{ok:true,json:async()=>data};
   }};
@@ -61,11 +62,14 @@ function browser({base=home,diagnostics=true}={}){
  const modelCalls=b.calls.length;b.get('setupBrain').value='edited role, not submitted';b.run("seiyaSettingsOptions.get('general').onclick();seiyaSettingsOptions.get('models').onclick()");await tick();assert.equal(b.calls.length,modelCalls);assert.equal(b.get('setupBrain').value,'edited role, not submitted');assert.equal(b.run("seiyaDiagnosticsInputs.get('chat_warning_ms').value"),'3000');assert.equal(b.run('seiyaDiagnosticsDirty'),true);
  b.run('seiyaSettingsBack.onclick()');assert.equal(b.get('composer').hidden,false);assert.equal(b.get('history').textContent,'Existing conversation');assert.equal(b.get('prompt').value,'Draft while navigating');assert.equal(b.get('scroll').scrollTop,89);
  const shortcut=await b.get('seiyaModelsSettingsLink').fire('click');assert.equal(shortcut.prevented,true);assert.equal(b.run('seiyaSettingsView'),'models');assert.equal(b.navigations.length,0);
+ b.run('seiyaSetupSaved()');assert.equal(b.run('seiyaSettingsView'),'chat');assert.match(b.get('status').textContent,/guardada sin iniciar/);b.run("seiyaOpenSettings('models')");
  b.run("seiyaShowDiagnostics({version:1,revision:1,limits:Object.fromEntries([...seiyaDiagnosticsInputs].map(([k,v])=>[k,Number(v.value)])),observation:{pressure:'normal'},no_inference_profile:true})");assert.equal(b.run('seiyaGeneralSettings.hidden'),true);assert.equal(b.run('seiyaSettingsView'),'models');b.run('seiyaSettingsBack.onclick()');
  b.context.busy=true;b.run("seiyaSettingsOptions.get('general').onclick()");assert.equal(b.run('seiyaSettingsView'),'chat');b.context.busy=false;
  b.run("seiyaSettingsOptions.get('general').onclick()");await b.run("seiyaSettingsMenu.fire('keydown',{key:'Escape'})");assert.equal(b.run('seiyaSettingsView'),'chat');assert.equal(b.run('seiyaSettingsRoot.attrs[\"aria-expanded\"]'),'false');
  b.run("seiyaSettingsOptions.get('models').onclick();openChat('another-chat')");assert.equal(b.context.lastChat,'another-chat');assert.equal(b.run('seiyaSettingsView'),'chat');assert.equal(b.get('prompt').value,'Draft while navigating');assert.equal(b.navigations.length,0);
- assert.ok(b.calls.every(c=>c.frame?.operation==='status'||c.options.method===undefined));
+  assert.ok(b.calls.every(c=>c.frame?.operation==='status'||c.options.method===undefined));
+  b=browser({base:home.replace(':8015/',':8016/')});b.run("seiyaSettingsOptions.get('models').onclick()");await tick();
+  assert.equal(b.run('seiyaSettingsView'),'models');assert.ok(b.calls.some(c=>c.target.startsWith('http://127.0.0.1:8016/app/')));
  for(const invalid of ['https://external.invalid/','http://127.0.0.1:9999/app/'+ 'b'.repeat(32)+'/',home+'?key=secret','http://127.0.0.1:8015/session/'+ 'a'.repeat(64)]){b=browser({base:invalid});await tick();assert.equal(b.run('seiyaSettingsOptions.get("models").disabled'),true);b.run("seiyaOpenSettings('models')");assert.equal(b.run('seiyaSettingsView'),'chat');assert.equal(b.timers.length,0);assert.ok(b.calls.every(c=>c.target==='/api/diagnostics/v1'));}
  b=browser({base:null,diagnostics:false});b.run("seiyaSettingsRoot.onclick();seiyaSettingsOptions.get('general').onclick()");assert.match(b.run('seiyaGeneralSettings.textContent'),/no está disponible/);assert.equal(b.calls.length,0);
  b.run('seiyaSettingsBack.onclick()');b.get('composer').hidden=true;b.run("seiyaSettingsOptions.get('general').onclick();seiyaSettingsBack.onclick()");assert.equal(b.get('composer').hidden,true);

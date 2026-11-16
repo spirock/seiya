@@ -15,11 +15,22 @@ const ctx={$:get,document:{createElement:()=>new Element()},Date,confirm:()=>con
   }
   return{ok:true,json:async()=>status()};
  }};
-vm.createContext(ctx);vm.runInContext(fs.readFileSync(path.join(__dirname,'../../crates/seiya-server/src/diagnostics_ui.js'),'utf8'),ctx);
+ const original=fs.readFileSync(path.join(__dirname,'../../crates/seiya-server/src/diagnostics_ui.js'),'utf8');
+ const field="chat_swap_growth_mib:['LLM (Gemma/Qwen): crecimiento swap (MiB)',64,2048]";
+ assert.equal(original.split(field).length,2);
+ vm.createContext(ctx);vm.runInContext(original.replace(field,field.replace('64,2048','64,4000')),ctx);
 const run=s=>vm.runInContext(s,ctx),tick=()=>new Promise(r=>setImmediate(r));
-(async()=>{
- await tick();assert.match(run('seiyaDiagnosticsStatus.textContent'),/CRÍTICA/);assert.match(run('seiyaDiagnosticsStatus.textContent'),/3006 ms/);assert.match(run('seiyaDiagnosticsStatus.textContent'),/ensayo anterior/);assert.match(run('seiyaDiagnosticsStatus.textContent'),/desactivados/);
- const warning=run("seiyaDiagnosticsInputs.get('chat_warning_ms')");warning.value='500';warning.oninput();await run('seiyaDiagnosticsSave.onclick()');assert.equal(limits.chat_warning_ms,500);assert.equal(revision,2);assert.match(run('seiyaDiagnosticsStatus.textContent'),/no se activó inferencia/);
+ (async()=>{
+  await tick();assert.equal(run("seiyaDiagnosticsFields.chat_swap_growth_mib[2]"),4000);
+  assert.equal(run("seiyaDiagnosticsFields.image_swap_growth_mib[2]"),512);
+  const swap=run("seiyaDiagnosticsInputs.get('chat_swap_growth_mib')");
+  swap.value='4000';swap.oninput();await run('seiyaDiagnosticsSave.onclick()');
+  assert.equal(limits.chat_swap_growth_mib,4000);
+  swap.value='4001';swap.oninput();const rejected=calls.length;await run('seiyaDiagnosticsSave.onclick()');
+  assert.equal(calls.length,rejected);
+  await ctx.seiyaRefreshDiagnostics();assert.equal(swap.value,'4000');
+  assert.match(run('seiyaDiagnosticsStatus.textContent'),/CRÍTICA/);assert.match(run('seiyaDiagnosticsStatus.textContent'),/3006 ms/);assert.match(run('seiyaDiagnosticsStatus.textContent'),/ensayo anterior/);assert.match(run('seiyaDiagnosticsStatus.textContent'),/desactivados/);
+  const warning=run("seiyaDiagnosticsInputs.get('chat_warning_ms')");warning.value='500';warning.oninput();await run('seiyaDiagnosticsSave.onclick()');assert.equal(limits.chat_warning_ms,500);assert.equal(revision,3);assert.match(run('seiyaDiagnosticsStatus.textContent'),/no se activó inferencia/);
  const before=calls.length;warning.value='10001';warning.oninput();await run('seiyaDiagnosticsSave.onclick()');assert.equal(calls.length,before);assert.match(run('seiyaDiagnosticsStatus.textContent'),/inválido/);
  warning.value='600';warning.oninput();revision++;await run('seiyaDiagnosticsSave.onclick()');assert.equal(warning.value,'600');assert.equal(run('seiyaDiagnosticsSave.disabled'),true);assert.match(run('seiyaDiagnosticsStatus.textContent'),/No se reenviará/);
  confirmed=false;const prior=calls.length;await ctx.seiyaRefreshDiagnostics();assert.equal(calls.length,prior);confirmed=true;await ctx.seiyaRefreshDiagnostics();assert.equal(run('seiyaDiagnosticsRevision'),revision);assert.equal(warning.value,'500');

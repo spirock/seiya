@@ -1,4 +1,4 @@
-//! Temporary browser authentication; no key in HTML/storage or HTTP logs.
+//! Browser authentication; no key in HTML or HTTP logs.
 use crate::{
     config::ConfigError,
     prepared_web::{self, PreparedWeb},
@@ -21,6 +21,9 @@ use std::{
 use subtle::ConstantTimeEq;
 struct Access {
     local_app: bool,
+    development_localhost: bool,
+    reusable_test_link: bool,
+    persistent_test: bool,
     scheme: &'static str,
     host: String,
     key: String,
@@ -30,9 +33,52 @@ struct Access {
 fn same(a: &str, b: &str) -> bool {
     bool::from(a.as_bytes().ct_eq(b.as_bytes()))
 }
+/// Persist only the test cookie key, never the browser bootstrap URL.
+pub(crate) fn test_key() -> Result<String, String> {
+    use crate::local_models::storage;
+    let root = storage::default_root()?;
+    test_key_at(&root)
+}
+fn test_key_at(root: &std::path::Path) -> Result<String, String> {
+    use crate::local_models::storage;
+    storage::ensure_directory(root)?;
+    let path = root.join("test-chat-8016.key");
+    let bytes = match storage::read(&path)? {
+        Some(bytes) => bytes,
+        None => {
+            let candidate = format!(
+                "{}{}",
+                uuid::Uuid::new_v4().simple(),
+                uuid::Uuid::new_v4().simple()
+            );
+            match storage::new_file(&path, candidate.as_bytes()) {
+                Ok(()) => candidate.into_bytes(),
+                Err(_) => storage::read(&path)?.ok_or("test_key_create_failed")?,
+            }
+        }
+    };
+    if bytes.len() != 64
+        || !bytes
+            .iter()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+    {
+        return Err("test_key_invalid".into());
+    }
+    String::from_utf8(bytes).map_err(|_| "test_key_invalid".into())
+}
 /// An inert desktop shell needs the same origin/cookie boundary as inference,
 /// but must not construct a model adapter just to display onboarding.
 pub(crate) fn desktop_shell(address: SocketAddr, inner: Router) -> (Router, String, String) {
+    desktop_shell_with_key(address, inner, None)
+}
+pub(crate) fn desktop_shell_with_key(
+    address: SocketAddr,
+    inner: Router,
+    test_key: Option<String>,
+) -> (Router, String, String) {
+    let persistent_test = cfg!(debug_assertions)
+        && test_key.is_some()
+        && address == SocketAddr::from(([127, 0, 0, 1], 8016));
     let token = || {
         format!(
             "{}{}",
@@ -42,9 +88,17 @@ pub(crate) fn desktop_shell(address: SocketAddr, inner: Router) -> (Router, Stri
     };
     let a = Arc::new(Access {
         local_app: true,
+        development_localhost: false,
+        persistent_test,
+        reusable_test_link: address.ip() == std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+            && address.port() == 8016,
         scheme: "http",
         host: address.to_string(),
-        key: token(),
+        key: if persistent_test {
+            test_key.unwrap()
+        } else {
+            token()
+        },
         bootstrap: vec![(token(), AtomicBool::new(false))],
         prefix: format!("/app/{}", uuid::Uuid::new_v4().simple()),
     });
@@ -56,11 +110,34 @@ pub(crate) fn desktop_shell(address: SocketAddr, inner: Router) -> (Router, Stri
             shell_authorization,
         ))
         .layer(middleware::from_fn_with_state(a.clone(), cookie));
-    let app = Router::new().nest(&format!("{}/", a.prefix), inner).merge(
+    let mut app = Router::new().nest(&format!("{}/", a.prefix), inner).merge(
         Router::new()
             .route("/session/{token}", get(bootstrap))
-            .with_state(a),
+            .with_state(a.clone()),
     );
+    if persistent_test {
+        app = app.route(
+            "/app/",
+            get(move |r: Request| {
+                let a = a.clone();
+                async move {
+                    if !origin(&a, &r) {
+                        return StatusCode::FORBIDDEN.into_response();
+                    }
+                    (
+                        StatusCode::SEE_OTHER,
+                        [
+                            (header::LOCATION, format!("{}/", a.prefix)),
+                            (header::CACHE_CONTROL, "no-store".to_owned()),
+                            (header::REFERRER_POLICY, "no-referrer".to_owned()),
+                            (header::SET_COOKIE, access_cookie(&a)),
+                        ],
+                    )
+                        .into_response()
+                }
+            }),
+        );
+    }
     (app, link, home)
 }
 async fn shell_authorization(State(a): State<Arc<Access>>, r: Request, next: Next) -> Response {
@@ -83,31 +160,64 @@ async fn shell_authorization(State(a): State<Arc<Access>>, r: Request, next: Nex
     response
 }
 fn origin(a: &Access, r: &Request) -> bool {
-    crate::single_header(r.headers(), header::HOST) == Some(a.host.as_str())
+    let host = crate::single_header(r.headers(), header::HOST);
+    (host == Some(a.host.as_str())
+        || (a.persistent_test || a.development_localhost) && host == Some("localhost:8016"))
         && (!r.headers().contains_key(header::ORIGIN)
             || crate::single_header(r.headers(), header::ORIGIN)
-                == Some(format!("{}://{}", a.scheme, a.host).as_str()))
+                == host.map(|h| format!("{}://{h}", a.scheme)).as_deref())
+}
+fn access_cookie(a: &Access) -> String {
+    format!(
+        "{}={}; HttpOnly; SameSite=Strict; Path={}{}{}",
+        if a.persistent_test {
+            "seiya_test_access"
+        } else {
+            "seiya_access"
+        },
+        a.key,
+        if a.persistent_test {
+            "/app/".to_owned()
+        } else {
+            format!("{}/", a.prefix)
+        },
+        if a.persistent_test {
+            "; Max-Age=315360000"
+        } else if a.local_app {
+            ""
+        } else {
+            "; Max-Age=1800"
+        },
+        if a.scheme == "https" { "; Secure" } else { "" },
+    )
 }
 async fn cookie(State(a): State<Arc<Access>>, mut r: Request, next: Next) -> Response {
     if !origin(&a, &r) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    if !r.headers().contains_key(header::AUTHORIZATION) {
-        if let Some(raw) = crate::single_header(r.headers(), header::COOKIE) {
-            let values: Vec<_> = raw
-                .split(';')
-                .map(str::trim)
-                .filter_map(|s| s.strip_prefix("seiya_access="))
-                .collect();
-            if values.len() == 1 && same(values[0], &a.key) {
-                r.headers_mut().insert(
-                    header::AUTHORIZATION,
-                    HeaderValue::from_str(&format!("Bearer {}", a.key)).unwrap(),
-                );
-            }
-        }
+    if !r.headers().contains_key(header::AUTHORIZATION) && valid_cookie(&a, &r) {
+        r.headers_mut().insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {}", a.key)).unwrap(),
+        );
     }
     next.run(r).await
+}
+fn valid_cookie(a: &Access, r: &Request) -> bool {
+    let name = if a.persistent_test {
+        "seiya_test_access="
+    } else {
+        "seiya_access="
+    };
+    let Some(raw) = crate::single_header(r.headers(), header::COOKIE) else {
+        return false;
+    };
+    let values: Vec<_> = raw
+        .split(';')
+        .map(str::trim)
+        .filter_map(|s| s.strip_prefix(name))
+        .collect();
+    values.len() == 1 && same(values[0], &a.key)
 }
 async fn bootstrap(
     State(a): State<Arc<Access>>,
@@ -120,25 +230,23 @@ async fn bootstrap(
     let Some((_, used)) = a.bootstrap.iter().find(|(t, _)| same(&token, t)) else {
         return StatusCode::FORBIDDEN.into_response();
     };
-    if used.swap(true, Ordering::AcqRel) {
+    if !a.reusable_test_link && used.swap(true, Ordering::AcqRel) {
         return StatusCode::FORBIDDEN.into_response();
     }
     (
         StatusCode::SEE_OTHER,
         [
-            (header::LOCATION, format!("{}/", a.prefix)),
+            (
+                header::LOCATION,
+                if a.persistent_test {
+                    "/app/".to_owned()
+                } else {
+                    format!("{}/", a.prefix)
+                },
+            ),
             (header::CACHE_CONTROL, "no-store".into()),
             (header::REFERRER_POLICY, "no-referrer".into()),
-            (
-                header::SET_COOKIE,
-                format!(
-                    "seiya_access={}; HttpOnly; SameSite=Strict; Path={}/{}{}",
-                    a.key,
-                    a.prefix,
-                    if a.local_app { "" } else { "; Max-Age=1800" },
-                    if a.scheme == "https" { "; Secure" } else { "" }
-                ),
-            ),
+            (header::SET_COOKIE, access_cookie(&a)),
         ],
     )
         .into_response()
@@ -188,6 +296,13 @@ fn configured_links(
     };
     let a = Arc::new(Access {
         local_app: scheme == "http" && address.ip().is_loopback(),
+        development_localhost: cfg!(debug_assertions)
+            && scheme == "http"
+            && address == SocketAddr::from(([127, 0, 0, 1], 8016)),
+        persistent_test: false,
+        reusable_test_link: scheme == "http"
+            && address.ip() == std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+            && address.port() == 8016,
         scheme,
         host: address.to_string(),
         key: token(),
@@ -229,6 +344,29 @@ fn configured_links(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn test_port_key_is_private_and_persists_without_repairing_bad_files() {
+        let root = std::env::temp_dir()
+            .canonicalize()
+            .unwrap()
+            .join(format!("seiya-test-key-{}", uuid::Uuid::new_v4()));
+        let first = test_key_at(&root).unwrap();
+        assert_eq!(first.len(), 64);
+        assert_eq!(test_key_at(&root).unwrap(), first);
+        let path = root.join("test-chat-8016.key");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+            assert!(test_key_at(&root).is_err());
+        }
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(&root).unwrap();
+    }
     use crate::{
         jobs::Demo,
         prepared_web::FOREGROUND,
@@ -236,6 +374,197 @@ mod tests {
     };
     use axum::body::Body;
     use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn mounted_chat_localhost_alias_is_exactly_debug_test_port() {
+        for port in [8015, 8016] {
+            let address: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+            let (router, link) = app(address, PreparedWeb::diagnostics_only().unwrap()).unwrap();
+            let path = reqwest::Url::parse(&link).unwrap().path().to_owned();
+            let req = |host: &str, origin: Option<&str>, path: &str, cookie: Option<&str>| {
+                let mut r = axum::http::Request::get(path).header(header::HOST, host);
+                if let Some(v) = origin {
+                    r = r.header(header::ORIGIN, v);
+                }
+                if let Some(v) = cookie {
+                    r = r.header(header::COOKIE, v);
+                }
+                r.body(Body::empty()).unwrap()
+            };
+            let allow = cfg!(debug_assertions) && port == 8016;
+            let host = format!("localhost:{port}");
+            let origin = format!("http://localhost:{port}");
+            let first = router
+                .clone()
+                .oneshot(req(&host, Some(&origin), &path, None))
+                .await
+                .unwrap();
+            assert_eq!(first.status(), if allow { 303 } else { 403 });
+            if allow {
+                let cookie = first.headers()[header::SET_COOKIE]
+                    .to_str()
+                    .unwrap()
+                    .split(';')
+                    .next()
+                    .unwrap();
+                let home = first.headers()[header::LOCATION].to_str().unwrap();
+                assert_eq!(
+                    router
+                        .clone()
+                        .oneshot(req(&host, Some(&origin), home, Some(cookie)))
+                        .await
+                        .unwrap()
+                        .status(),
+                    200
+                );
+                assert_eq!(
+                    router
+                        .clone()
+                        .oneshot(req(
+                            &host,
+                            Some("http://127.0.0.1:8016"),
+                            home,
+                            Some(cookie)
+                        ))
+                        .await
+                        .unwrap()
+                        .status(),
+                    403
+                );
+                assert_eq!(
+                    router
+                        .clone()
+                        .oneshot(req("otherhost:8016", None, home, Some(cookie)))
+                        .await
+                        .unwrap()
+                        .status(),
+                    403
+                );
+            }
+            assert_eq!(
+                router
+                    .clone()
+                    .oneshot(req("localhost:8017", None, &path, None))
+                    .await
+                    .unwrap()
+                    .status(),
+                403
+            );
+            assert_eq!(
+                router
+                    .oneshot(req(&format!("127.0.0.1:{port}"), None, &path, None))
+                    .await
+                    .unwrap()
+                    .status(),
+                303
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_port_link_reopens_without_timer_but_restarts_revoke_it() {
+        let address: SocketAddr = "127.0.0.1:8016".parse().unwrap();
+        for chat in [false, true] {
+            let (router, link, home) = if chat {
+                let (router, url) = app(address, PreparedWeb::diagnostics_only().unwrap()).unwrap();
+                (router, url, None)
+            } else {
+                let (router, url, _) =
+                    desktop_shell(address, Router::new().route("/", get(|| async { "setup" })));
+                (router, url, Some("setup"))
+            };
+            let path = reqwest::Url::parse(&link).unwrap().path().to_owned();
+            let request = |path: &str, cookie: Option<&str>, host: &str, origin: Option<&str>| {
+                let mut req = axum::http::Request::get(path).header(header::HOST, host);
+                if let Some(value) = cookie {
+                    req = req.header(header::COOKIE, value);
+                }
+                if let Some(value) = origin {
+                    req = req.header(header::ORIGIN, value);
+                }
+                req.body(Body::empty()).unwrap()
+            };
+            for _ in 0..2 {
+                let response = router
+                    .clone()
+                    .oneshot(request(&path, None, "127.0.0.1:8016", None))
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), 303);
+                let raw = response.headers()[header::SET_COOKIE].to_str().unwrap();
+                assert!(raw.contains("HttpOnly; SameSite=Strict"));
+                assert!(!raw.contains("Max-Age") && !raw.contains("Expires"));
+                let cookie = raw.split(';').next().unwrap();
+                let location = response.headers()[header::LOCATION].to_str().unwrap();
+                if home.is_some() {
+                    assert!(location.starts_with("/app/"));
+                }
+                let response = router
+                    .clone()
+                    .oneshot(request(location, Some(cookie), "127.0.0.1:8016", None))
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), 200);
+            }
+            tokio::time::advance(std::time::Duration::from_secs(48 * 3600)).await;
+            assert_eq!(
+                router
+                    .clone()
+                    .oneshot(request(&path, None, "127.0.0.1:8016", None))
+                    .await
+                    .unwrap()
+                    .status(),
+                303
+            );
+            assert_eq!(
+                router
+                    .clone()
+                    .oneshot(request(&path, None, "127.0.0.1:8015", None))
+                    .await
+                    .unwrap()
+                    .status(),
+                403
+            );
+            assert_eq!(
+                router
+                    .clone()
+                    .oneshot(request(
+                        &path,
+                        None,
+                        "127.0.0.1:8016",
+                        Some("http://127.0.0.1:8015")
+                    ))
+                    .await
+                    .unwrap()
+                    .status(),
+                403
+            );
+            assert_eq!(
+                router
+                    .clone()
+                    .oneshot(request("/session/invalid", None, "127.0.0.1:8016", None))
+                    .await
+                    .unwrap()
+                    .status(),
+                403
+            );
+            let restarted = if chat {
+                app(address, PreparedWeb::diagnostics_only().unwrap())
+                    .unwrap()
+                    .0
+            } else {
+                desktop_shell(address, Router::new().route("/", get(|| async { "setup" }))).0
+            };
+            assert_eq!(
+                restarted
+                    .oneshot(request(&path, None, "127.0.0.1:8016", None))
+                    .await
+                    .unwrap()
+                    .status(),
+                403
+            );
+        }
+    }
     #[tokio::test(start_paused = true)]
     async fn local_app_cookie_has_no_timer_and_restart_requires_fresh_bootstrap() {
         let address = "127.0.0.1:8015".parse().unwrap();

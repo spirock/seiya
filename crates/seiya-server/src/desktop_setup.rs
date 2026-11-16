@@ -9,7 +9,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
-use tokio::sync::{watch, Mutex, Semaphore};
+use tokio::sync::{watch, Mutex, OwnedSemaphorePermit, Semaphore};
 use tower::ServiceExt;
 
 pub(crate) type Work<'a, T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send + 'a>>;
@@ -100,6 +100,9 @@ pub(crate) trait Adapter: Send + Sync {
         "Guardar solo modifica el perfil privado de Seiya. Iniciar prepara el host; no genera ni descarga modelos. Los motores siguen sujetos a pins, memoria y exclusión.".into()
     }
     fn snapshot(&self) -> Result<Snapshot, String>;
+    fn saved_host(&self) -> Result<Option<(Vec<u8>, bool)>, String> {
+        Ok(None)
+    }
     fn review(&self, draft: Draft, baseline: Vec<u8>) -> Result<Approval, String>;
     fn save(&self, approval: &Approval) -> Result<(), String>;
     fn pick(&self, field: String) -> Work<'_, String>;
@@ -122,6 +125,7 @@ struct Control {
     stop: Option<watch::Sender<bool>>,
     chat: Option<String>,
     bootstrap: Option<String>,
+    restored: bool,
 }
 struct Setup {
     home: std::sync::OnceLock<String>,
@@ -144,6 +148,7 @@ impl Setup {
                 stop: None,
                 chat: None,
                 bootstrap: None,
+                restored: false,
             }),
             operation: Arc::new(Semaphore::new(1)),
             bodies: Semaphore::new(4),
@@ -161,17 +166,34 @@ async fn page() -> Html<String> {
     let source = include_str!("../../../swarm-app/seiya/ui.html");
     let shell = source.split("<script>").next().unwrap();
     Html(format!(
-        "{shell}{}<script>{}\n{}</script></html>",
-        include_str!("desktop_setup.html"),
-        include_str!("desktop_setup.js").replace(r"trial\/", r"app\/"),
-        include_str!("desktop_setup_feedback.js")
+        "{shell}{}<script>{}\n{}\n{}</script></html>",
+        include_str!("desktop_setup.html").replace("position:fixed;inset:64px 16px 16px auto;width:min(780px,calc(100% - 32px));overflow:auto;", "max-width:780px;margin:0 auto;"),
+        navigation_script(),
+        include_str!("desktop_setup_feedback.js"),
+        include_str!("desktop_setup_navigation.js")
     ))
+}
+pub(crate) fn navigation_script() -> String {
+    include_str!("desktop_setup.js")
+        .replace(r"trial\/", r"app\/")
+        .replace(
+            "let baseline = [], approval = null, busy = false, polling = false, runtimeAvailable = true;",
+            "let baseline = [], approval = null, busy = false, polling = false, runtimeAvailable = true;\n   let seiyaInitialPhase = null, seiyaAutoEnterAttempted = false;",
+        )
+        .replace(
+            "el('setupEnter').hidden = v.phase !== 'running';",
+            "el('setupEnter').hidden = v.phase !== 'running';\n       if (seiyaInitialPhase === null) seiyaInitialPhase = v.phase === 'starting' && v.restored_host ? 'running' : v.phase;\n       if (seiyaInitialPhase === 'running' && v.phase === 'running' && !busy && !seiyaAutoEnterAttempted) {\n         seiyaAutoEnterAttempted = true;\n         el('setupEnter').click();\n       }",
+        )
+        .replace(
+            "if (v.saved) { const current = await api('detect'); baseline = current.baseline; }",
+            "if (v.saved) { const current = await api('detect'); baseline = current.baseline; if (!start && typeof seiyaSetupSaved === 'function') seiyaSetupSaved(); }",
+        )
 }
 async fn status(State(s): State<Arc<Setup>>) -> Json<Value> {
     let c = s.control.lock().await;
     Json(
         json!({"platform":crate::platform::current().os.name(),"architecture":crate::platform::current().architecture,"runtime_available":s.adapter.available(),
-        "phase":c.phase,"error":c.error,"chat":c.chat,
+        "phase":c.phase,"error":c.error,"chat":c.chat,"restored_host":c.restored,
         "automatic_inference_requested":false,"inference_tested":false}),
     )
 }
@@ -281,19 +303,34 @@ async fn confirm(State(s): State<Arc<Setup>>, Json(v): Json<Confirm>) -> Respons
         return failure(e);
     }
     c.error = None;
+    c.restored = false;
     c.phase = "saved";
     if !v.start {
         return Json(json!({"saved":true,"started":false})).into_response();
     }
+    let profile = reviewed.approval.profile;
+    let solo = reviewed.approval.draft.roles.workers.is_empty()
+        && reviewed.approval.draft.roles.image.is_empty();
     let (stop, rx) = watch::channel(false);
     c.stop = Some(stop);
     c.phase = "starting";
     c.chat = None;
     c.bootstrap = None;
-    let profile = reviewed.approval.profile;
-    let solo = reviewed.approval.draft.roles.workers.is_empty()
-        && reviewed.approval.draft.roles.image.is_empty();
     drop(c);
+    start_host(s, permit, profile, solo, rx);
+    (
+        StatusCode::ACCEPTED,
+        Json(json!({"saved":true,"started":false,"phase":"starting"})),
+    )
+        .into_response()
+}
+fn start_host(
+    s: Arc<Setup>,
+    permit: OwnedSemaphorePermit,
+    profile: Vec<u8>,
+    solo: bool,
+    rx: watch::Receiver<bool>,
+) {
     tokio::spawn(async move {
         // The permit serializes startup, but Stop can always signal cancellation.
         match s
@@ -340,19 +377,49 @@ async fn confirm(State(s): State<Arc<Setup>>, Json(v): Json<Confirm>) -> Respons
             }
         }
     });
-    (
-        StatusCode::ACCEPTED,
-        Json(json!({"saved":true,"started":false,"phase":"starting"})),
-    )
-        .into_response()
 }
-async fn enter(State(s): State<Arc<Setup>>) -> Response {
+async fn enter(State(s): State<Arc<Setup>>, r: Request) -> Response {
     let mut c = s.control.lock().await;
     if c.phase != "running" {
         return failure("runtime_not_ready");
     }
-    // Return the one-use link once, then only the cookie-authenticated home.
-    let url = c.bootstrap.take().or_else(|| c.chat.clone());
+    // The shell and mounted chat must retain the browser's exact origin. Only
+    // the debug test instance may translate its canonical loopback link.
+    let reusable = cfg!(debug_assertions)
+        && s.home
+            .get()
+            .is_some_and(|v| v.starts_with("http://127.0.0.1:8016/app/"));
+    let localhost = reusable
+        && crate::single_header(r.headers(), axum::http::header::HOST) == Some("localhost:8016");
+    let url = c.bootstrap.as_ref().or(c.chat.as_ref()).cloned();
+    let url = if localhost {
+        match url.map(|v| {
+            let mut parsed = reqwest::Url::parse(&v).map_err(|_| "invalid_chat_destination")?;
+            if parsed.scheme() != "http"
+                || parsed.host_str() != Some("127.0.0.1")
+                || parsed.port() != Some(8016)
+                || !parsed.username().is_empty()
+                || parsed.password().is_some()
+            {
+                return Err("invalid_chat_destination");
+            }
+            parsed
+                .set_host(Some("localhost"))
+                .map_err(|_| "invalid_chat_destination")?;
+            Ok(parsed.into())
+        }) {
+            Some(Ok(v)) => Some(v),
+            Some(Err(code)) => return failure(code),
+            None => None,
+        }
+    } else {
+        url
+    };
+    // The dev chat's own bootstrap is reusable. Keep it available to a second
+    // browser; normal desktop sessions still consume their first link once.
+    if !reusable && c.bootstrap.is_some() && url.is_some() {
+        c.bootstrap.take();
+    }
     Json(json!({"url":url})).into_response()
 }
 async fn stop(State(s): State<Arc<Setup>>) -> Json<Value> {
@@ -372,8 +439,23 @@ async fn quit(State(s): State<Arc<Setup>>) -> StatusCode {
     StatusCode::ACCEPTED
 }
 fn application(s: Arc<Setup>) -> (Router, String, String) {
+    application_at(s, "127.0.0.1:8015".parse().unwrap())
+}
+fn application_at(s: Arc<Setup>, address: std::net::SocketAddr) -> (Router, String, String) {
+    application_at_with_key(s, address, None)
+}
+fn application_at_with_key(
+    s: Arc<Setup>,
+    address: std::net::SocketAddr,
+    key: Option<String>,
+) -> (Router, String, String) {
+    let page_route = if address.port() == 8016 && key.is_none() {
+        get(preview::page)
+    } else {
+        get(page)
+    };
     let inner = Router::new()
-        .route("/", get(page))
+        .route("/", page_route)
         .route("/api/status", get(status))
         .route("/api/detect", get(detect))
         .route("/api/pick", post(pick))
@@ -385,13 +467,20 @@ fn application(s: Arc<Setup>) -> (Router, String, String) {
         .layer(DefaultBodyLimit::max(128 * 1024))
         .layer(axum::middleware::from_fn_with_state(s.clone(), admission))
         .with_state(s.clone());
-    let (app, bootstrap, home) =
-        crate::pair_trial::access::desktop_shell("127.0.0.1:8015".parse().unwrap(), inner);
+    let persistent_test = key.is_some();
+    let (app, bootstrap, home) = if persistent_test {
+        crate::pair_trial::access::desktop_shell_with_key(address, inner, key)
+    } else {
+        crate::pair_trial::access::desktop_shell(address, inner)
+    };
     s.home.set(home.clone()).unwrap();
     let prefix = reqwest::Url::parse(&home).unwrap().path().to_owned();
     let bootstrap_path = reqwest::Url::parse(&bootstrap).unwrap().path().to_owned();
     let dispatch = Router::new().fallback(move |r: Request| {
-        let selected = if r.uri().path().starts_with(&prefix) || r.uri().path() == bootstrap_path {
+        let selected = if r.uri().path().starts_with(&prefix)
+            || r.uri().path() == bootstrap_path
+            || persistent_test && r.uri().path() == "/app/"
+        {
             app.clone()
         } else {
             s.mounted.read().unwrap().clone()
@@ -438,7 +527,18 @@ pub(crate) async fn run(
     adapter: Arc<dyn Adapter>,
     open: impl FnOnce(String) -> Work<'static, String>,
 ) -> Result<(), String> {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8015")
+    run_at(adapter, open, 8015).await
+}
+async fn run_at(
+    adapter: Arc<dyn Adapter>,
+    open: impl FnOnce(String) -> Work<'static, String>,
+    port: u16,
+) -> Result<(), String> {
+    if !matches!(port, 8015 | 8016) {
+        return Err("desktop_port_not_allowed".into());
+    }
+    let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let listener = tokio::net::TcpListener::bind(address)
         .await
         .map_err(|_| "desktop_port_busy_no_adoption")?;
     let (shutdown, mut rx) = watch::channel(false);
@@ -448,7 +548,18 @@ pub(crate) async fn run(
         signal_shutdown.send_replace(true);
     });
     let state = Setup::new(adapter, shutdown.clone());
-    let (app, bootstrap, _) = application(state.clone());
+    let (app, bootstrap, _) = if port == 8015 {
+        application(state.clone())
+    } else {
+        application_at_with_key(
+            state.clone(),
+            address,
+            Some(crate::pair_trial::access::test_key()?),
+        )
+    };
+    // A previously approved manager can prepare the host again, not a model.
+    // Missing/invalid state stays visible in setup; never retry or rewrite it.
+    restore_saved_host(&state).await;
     let mut server = tokio::spawn(async move { axum::serve(listener, app).await });
     let opened =
         tokio::select! { value=open(bootstrap)=>value, _=rx.changed()=>Err("cancelled".into()) };
@@ -456,7 +567,7 @@ pub(crate) async fn run(
     if opened.is_ok() && !*rx.borrow() {
         tokio::select! {
             _=rx.changed()=>{},
-            _=tokio::time::sleep(Duration::from_secs(1800))=>{},
+            _=async { if port == 8015 { tokio::time::sleep(Duration::from_secs(1800)).await } else { std::future::pending::<()>().await } }=>{},
             _=&mut server=>{server_ended=true; shutdown.send_replace(true);},
         }
     }
@@ -488,6 +599,27 @@ pub(crate) async fn run(
         Ok(_) => Ok(()),
         Err(e) if e == "cancelled" => Ok(()),
         Err(e) => Err(e),
+    }
+}
+async fn restore_saved_host(state: &Arc<Setup>) {
+    match state.adapter.saved_host() {
+        Ok(Some((profile, solo))) if state.adapter.available() => {
+            let permit = state.operation.clone().try_acquire_owned().unwrap();
+            let (stop, rx) = watch::channel(false);
+            {
+                let mut c = state.control.lock().await;
+                c.stop = Some(stop);
+                c.phase = "starting";
+                c.restored = true;
+            }
+            start_host(state.clone(), permit, profile, solo, rx);
+        }
+        Ok(Some(_)) | Ok(None) => {}
+        Err(e) => {
+            let mut c = state.control.lock().await;
+            c.phase = "blocked";
+            c.error = Some(e);
+        }
     }
 }
 async fn termination() {
@@ -528,6 +660,49 @@ impl Adapter for Unsupported {
 }
 pub async fn launch() -> Result<(), String> {
     launch_catalog(None).await
+}
+mod preview;
+/// Local UI-only test server on 8016. Never constructs a native runtime adapter.
+pub async fn launch_preview() -> Result<(), String> {
+    preview::launch().await
+}
+/// Full desktop flow on the dedicated test port. No automatic start/inference.
+pub async fn launch_test_chat() -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Err("development_test_chat_only".into());
+    }
+    #[cfg(target_os = "macos")]
+    let adapter: Arc<dyn Adapter> = Arc::new(crate::launcher::WebAdapter::new()?);
+    #[cfg(not(target_os = "macos"))]
+    return Err("native_test_chat_macos_only".into());
+    #[cfg(target_os = "macos")]
+    run_at(
+        adapter,
+        |_url| {
+            Box::pin(async move {
+                let status = tokio::time::timeout(
+                    Duration::from_secs(10),
+                    tokio::process::Command::new("/usr/bin/open")
+                        .arg("http://localhost:8016/app/")
+                        .kill_on_drop(true)
+                        .stdin(std::process::Stdio::null())
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status(),
+                )
+                .await
+                .map_err(|_| "browser_open_timeout")?
+                .map_err(|_| "browser_open_failed")?;
+                if !status.success() {
+                    return Err("browser_open_failed".into());
+                }
+                println!("Seiya chat de pruebas · http://localhost:8016/app/");
+                Ok(String::new())
+            })
+        },
+        8016,
+    )
+    .await
 }
 pub async fn launch_catalog(explicit: Option<std::path::PathBuf>) -> Result<(), String> {
     let root = crate::local_models::storage::default_root()?;

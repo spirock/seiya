@@ -23,7 +23,9 @@ seiyaChatFetch=async function(headers,payload){
    if(!data.image_job||typeof data.image_job!=='object'||data.image_job.request_id!==pending.id)throw Error('Registro de imagen inválido. Consulta el panel antes de reenviar.');
    seiyaValidJobList({jobs:[data.image_job]},8,seiyaImageLabels);
   }
-  delete chat.chatImagePending;if(!saveChats()){chat.chatImagePending=pending;throw Error('Registro recibido pero no guardado. Conserva la referencia y recupera desde el panel antes de reenviar.');}
+   const previousBindings=chat.imageJobMessages;
+   if(data.image_job&&Array.isArray(chat.messages))chat.imageJobMessages={...previousBindings,[pending.id]:chat.messages.length};
+   delete chat.chatImagePending;if(!saveChats()){chat.chatImagePending=pending;chat.imageJobMessages=previousBindings;throw Error('Registro recibido pero no guardado. Conserva la referencia y recupera desde el panel antes de reenviar.');}
   seiyaChatImageRecoveryState();
  if(data.image_job)await seiyaRefreshImages();
  return {ok:true,json:async()=>data};

@@ -38,13 +38,21 @@ Bajo prefijo autenticado aleatorio, no API LAN/pública ni contrato de un modelo
 | POST api/pick {field} | Selector macOS constante para uno de cuatro campos |
 | POST api/review {draft,baseline} | Validación; prepara directorios propios; aprobación de un uso |
 | POST api/confirm {approval,start} | Consume bytes revisados y guarda; inicia solo si start=true y roles admitidos |
-| POST api/enter | Entrega una vez el bootstrap del chat; después su home con cookie |
+| POST api/enter | Entrega una vez la URL bootstrap del chat; después su home con cookie. En el puerto de pruebas8016 la URL se puede reabrir mientras viva el proceso; en8015 sigue siendo de un solo uso. |
 | POST api/stop | Solicita parada; no declara cleanup completado por responder200 |
 | POST api/quit | Revoca admisión y cierra tras esperar cleanup |
 
 Host/Origin exactos, cookie HttpOnly/SameSite, sin CORS ni secretos en HTML o
 localStorage; cuerpos128KiB/5s, cuatro lecturas simultáneas y una mutación activa.
 Una aprobación no se reintenta ni se recupera automáticamente tras recarga/error.
+Solo en `--test-chat` debug (socket127.0.0.1:8016), una visita directa a
+`http://localhost:8016/app/` emite una cookie de shell distinta de8015 y
+redirige al shell completo. Admite `localhost:8016` o `127.0.0.1:8016` como
+Host, con Origin exacto si se envía; no requiere cookie previa. Esto permite
+que cualquier programa local obtenga la cookie **en desarrollo**, no en release
+(donde `--test-chat` se rechaza y el alias no se registra). La clave del shell
+se guarda en almacenamiento privado y persiste tras reinicio. El bootstrap del
+chat preparado y sus guardas permanecen separados.
 Bloqueo por cleanup incierto impide otro inicio, sin borrar cuarentenas.
 
 Windows/Linux no escriben este documento ni ejecutan el perfil macOS. Comparten

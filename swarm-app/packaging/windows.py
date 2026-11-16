@@ -9,13 +9,15 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from build import ROOT, VERSION, write
+from build import ROOT, VERSION, write, stage_icons, verify_icons
 
 
 FILES = {'seiya-desktop.exe', 'seiya-server.exe', 'README.md', 'LICENSE',
          'THIRD_PARTY_NOTICES.md', 'server.discovery.example.json', 'BUILD-INFO.json',
          'Seiya-Rust-Help.cmd', 'Seiya-Rust.cmd', 'local-models.example.json', 'LOCAL_MODELS.md', 'BACKENDS_LOCALES.md'}
 FILES.update({'IMAGENES_DESDE_CHAT.md','RESIDENCIA_NATIVA.md','PRUEBA_INSTALADOR.md','CHAT_TEXTO.md','desktop-chat-images.example.json','local-models-images.example.json'})
+FILES.add('seiya.ico')
+FILES.add('ICONOS_APP.md')
 
 
 def windows_binary(path):
@@ -50,6 +52,7 @@ def stage_payload(root, binaries, revision=None):
         windows_binary(root / name)
         info['binaries'][name] = hashlib.sha256((root / name).read_bytes()).hexdigest()
     for source, name in [('docs/WINDOWS_RUST.md', 'README.md'), ('LICENSE', 'LICENSE'),
+                          ('docs/ICONOS_APP.md', 'ICONOS_APP.md'),
                           ('THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_NOTICES.md'),
                           ('contracts/local-models/v1/catalog.example.json', 'local-models.example.json'),
                           ('contracts/local-models/v1/README.md', 'LOCAL_MODELS.md'),
@@ -62,6 +65,7 @@ def stage_payload(root, binaries, revision=None):
                           ('contracts/local-models/v1/images.example.json', 'local-models-images.example.json'),
                          ('contracts/desktop/windows/server.discovery.example.json', 'server.discovery.example.json')]:
         write(root, name, (ROOT.parent / source).read_bytes())
+    info['icons'] = stage_icons(root, {'seiya.ico': 'seiya.ico'})
     write(root, 'BUILD-INFO.json', json.dumps(info, indent=2) + '\n')
     write(root, 'Seiya-Rust-Help.cmd', '@echo off\r\n"%~dp0seiya-desktop.exe" --help\r\npause\r\n')
     write(root, 'Seiya-Rust.cmd', '@echo off\r\n"%~dp0seiya-desktop.exe" --launch\r\n')
@@ -73,6 +77,7 @@ def inspect_payload(root):
     if any(p.is_symlink() or not p.is_file() for p in paths) or {p.relative_to(root).as_posix() for p in paths if p.is_file()} != FILES:
         raise SystemExit('Windows payload differs from explicit flat allowlist.')
     info = json.loads((root / 'BUILD-INFO.json').read_text())
+    verify_icons(root, {'seiya.ico': 'seiya.ico'}, info)
     if info['platform'] != 'windows' or info['arch'] != 'x64':
         raise SystemExit('Windows payload metadata mismatch.')
     for name in ('seiya-desktop.exe', 'seiya-server.exe'):

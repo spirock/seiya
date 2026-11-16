@@ -19,6 +19,47 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = '0.1.0'
+ICON_SIZES = (16, 24, 32, 48, 64, 128, 256, 512, 1024)
+
+
+def icon_asset(name):
+    folder = ROOT / 'packaging/icons'
+    allowed = {f'seiya-{size}.png' for size in ICON_SIZES} | {'seiya.ico', 'seiya.icns'}
+    if name not in allowed:
+        raise SystemExit('Unknown icon asset.')
+    path = folder / name
+    if path.is_symlink() or not path.is_file() or not 32 <= path.stat().st_size <= 8 * 1024 * 1024:
+        raise SystemExit('Regular bounded icon asset required.')
+    data = path.read_bytes()
+    manifest = json.loads((folder / 'manifest.json').read_text())
+    if hashlib.sha256(data).hexdigest() != manifest['files'][name]:
+        raise SystemExit('Icon asset hash mismatch.')
+    return data
+
+
+def rust_icons(mac):
+    if mac:
+        return {'Applications/Seiya Rust.app/Contents/Resources/seiya.icns': 'seiya.icns'}
+    return {f'usr/share/icons/hicolor/{size}x{size}/apps/seiya.png': f'seiya-{size}.png'
+            for size in ICON_SIZES}
+
+
+def stage_icons(root, mapping):
+    hashes = {}
+    for dest, source in mapping.items():
+        data = icon_asset(source)
+        write(root, dest, data)
+        hashes[dest] = hashlib.sha256(data).hexdigest()
+    return hashes
+
+
+def verify_icons(root, mapping, info):
+    expected = {dest: hashlib.sha256(icon_asset(source)).hexdigest() for dest, source in mapping.items()}
+    if info.get('icons') != expected:
+        raise SystemExit('Icon metadata mismatch.')
+    for dest, digest in expected.items():
+        if hashlib.sha256((root / dest).read_bytes()).hexdigest() != digest:
+            raise SystemExit('Payload icon hash mismatch.')
 
 
 def write(root, path, content, mode=0o644):
@@ -179,6 +220,7 @@ def rust_stage(root, binaries, mac, arch, libc_min=None, revision=None):
         # Hash the actual staged payload, not an earlier view of a source file.
         info['binaries'][name] = hashlib.sha256(target.read_bytes()).hexdigest()
     for source, dest in [('docs/PAQUETES_PRUEBA.md', 'README.md'), ('docs/APP_RUST.md', 'APP_RUST.md'), ('docs/PARIDAD_RUST.md', 'PARIDAD_RUST.md'), ('docs/BACKENDS_LOCALES.md', 'BACKENDS_LOCALES.md'),
+                         ('docs/ICONOS_APP.md', 'ICONOS_APP.md'),
                          ('docs/IMAGENES_DESDE_CHAT.md', 'IMAGENES_DESDE_CHAT.md'),
                          ('docs/RESIDENCIA_NATIVA.md', 'RESIDENCIA_NATIVA.md'),
                           ('docs/PRUEBA_INSTALADOR.md', 'PRUEBA_INSTALADOR.md'),
@@ -190,6 +232,7 @@ def rust_stage(root, binaries, mac, arch, libc_min=None, revision=None):
                          ('contracts/local-models/v1/catalog.example.json', 'local-models.example.json'),
                          ('contracts/local-models/v1/README.md', 'LOCAL_MODELS.md')]:
         write(root, doc + dest, (ROOT.parent / source).read_bytes())
+    info['icons'] = stage_icons(root, rust_icons(mac))
     write(root, doc + 'BUILD-INFO.json', json.dumps(info, indent=2) + '\n')
     binary = lib + 'seiya-desktop'
     prefix = '/usr/local/bin/' if mac else '/usr/bin/'
@@ -199,6 +242,7 @@ def rust_stage(root, binaries, mac, arch, libc_min=None, revision=None):
         write(root, app + 'Info.plist', plistlib.dumps({
             'CFBundleIdentifier': 'local.seiya.rust.experimental', 'CFBundleName': 'Seiya Rust',
             'CFBundleExecutable': 'Seiya', 'CFBundlePackageType': 'APPL',
+            'CFBundleIconFile': 'seiya.icns',
             'CFBundleShortVersionString': VERSION, 'CFBundleVersion': VERSION,
             'LSMinimumSystemVersion': '13.0'}))
         write(root, app + 'MacOS/Seiya', '''#!/bin/sh
@@ -215,6 +259,7 @@ Type=Application
 Name=Seiya Rust (experimental)
 Comment=Local web setup; external model engines configured explicitly
 Exec=seiya-rust --launch
+Icon=seiya
 Terminal=true
 Categories=Development;
 ''')
@@ -230,7 +275,9 @@ def verify_rust_stage(root, mac, arch):
     expected = {lib + n for n in ('seiya-desktop', 'seiya-server')}
     expected.update(doc + n for n in ('README.md', 'APP_RUST.md', 'PARIDAD_RUST.md', 'BACKENDS_LOCALES.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'desktop.example.json', 'local-models.example.json', 'LOCAL_MODELS.md', 'BUILD-INFO.json'))
     expected.update(doc+n for n in ('IMAGENES_DESDE_CHAT.md','RESIDENCIA_NATIVA.md','PRUEBA_INSTALADOR.md','CHAT_TEXTO.md','desktop-chat-images.example.json','local-models-images.example.json'))
+    expected.add(doc + 'ICONOS_APP.md')
     expected.update(prefix + n for n in ('seiya-rust', 'seiya-rust-server'))
+    expected.update(rust_icons(mac))
     if mac:
         expected.update((app + 'Info.plist', app + 'MacOS/Seiya', app + 'Resources/Seiya.command'))
     else:
@@ -244,6 +291,12 @@ def verify_rust_stage(root, mac, arch):
     if actual != expected:
         raise SystemExit('Rust payload differs from the explicit file allowlist.')
     info = json.loads((root / doc / 'BUILD-INFO.json').read_text())
+    verify_icons(root, rust_icons(mac), info)
+    if mac:
+        if plistlib.loads((root / app / 'Info.plist').read_bytes()).get('CFBundleIconFile') != 'seiya.icns':
+            raise SystemExit('macOS icon registration mismatch.')
+    elif 'Icon=seiya\n' not in (root / 'usr/share/applications/seiya-rust.desktop').read_text():
+        raise SystemExit('Linux icon registration mismatch.')
     if info['implementation'] != 'rust-experimental' or info['arch'] != arch or info['platform'] != ('macos' if mac else 'linux'):
         raise SystemExit('Rust build metadata target mismatch.')
     for name in ('seiya-desktop', 'seiya-server'):

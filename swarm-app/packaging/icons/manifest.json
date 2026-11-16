@@ -1,0 +1,17 @@
+{
+  "source": "docs/assets/seiya-icon-proposal.png",
+  "source_sha256": "f8bd682426a418ac4d751871e8ca4c80465c6df7ee1c9036bf9470bcc4230b28",
+  "files": {
+    "seiya-16.png": "502b5d3eb8d3eaaaa0214032a7a4529d44d9daa9fc1e229e4475398069d54991",
+    "seiya-24.png": "26c9e34ddf7fd17f04026bc05ff2dfc0c696160cd221d7fb5cc9fcd8405199a4",
+    "seiya-32.png": "96bcebb2c22bf46db501860ba3edd307c378f88fe9a53083471a7ad82419c158",
+    "seiya-48.png": "3d7f1cb353f1151286617f575d10b2d288c434c01c3e0a1853a463b4b376c187",
+    "seiya-64.png": "cd46fd65862bc5d2e29e1a915ff684add09c71dc4e38bb28b5ea1c0bfa3d43c1",
+    "seiya-128.png": "f5bf48745d06f0fd7684a300a215602e5fb72c226bb28b941d66c0e8fd439439",
+    "seiya-256.png": "e3c92dac0b9cbe37add9f9476b31a373d3f1f72674cbbe11760806851f061616",
+    "seiya-512.png": "41503c45b33ea2d59759c65f0e66b15bc8f792b15e74e47167ec01bebeb7c512",
+    "seiya-1024.png": "05bae427f7beda144d14f2ed45d36ad6605c3f8ae438b6c197056cd9677ec69b",
+    "seiya.ico": "0dd4e80ece0e8f812e8ca99cb4bd1b594e40c462e0471aaec688d74ce1ee4c64",
+    "seiya.icns": "e1dcd6f44518da159e1065ef5f6796ea6d1323f93bb10ec213811781a97752f8"
+  }
+}

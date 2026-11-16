@@ -6,7 +6,7 @@ pub(crate) fn valid_home(home: &str) -> bool {
     url.as_str() == home
         && url.scheme() == "http"
         && url.host_str() == Some("127.0.0.1")
-        && url.port() == Some(8015)
+        && matches!(url.port(), Some(8015 | 8016))
         && url.username().is_empty()
         && url.password().is_none()
         && url.query().is_none()
@@ -18,12 +18,22 @@ pub(crate) fn valid_home(home: &str) -> bool {
             .is_some_and(|id| id.len() == 32 && id.bytes().all(|c| c.is_ascii_hexdigit()))
 }
 
+pub(crate) fn desktop_port(home: &str) -> Result<u16, &'static str> {
+    if !valid_home(home) {
+        return Err("invalid_desktop_setup_home");
+    }
+    reqwest::Url::parse(home)
+        .ok()
+        .and_then(|url| url.port())
+        .ok_or("invalid_desktop_setup_home")
+}
+
 pub(crate) fn render(home: Option<&str>) -> String {
     let home = home.filter(|home| valid_home(home));
     let fragment = home.map_or("", |_| include_str!("desktop_setup.html"));
     // Reuse the audited setup handlers, but not the standalone shell's composer
     // lock/status overrides. Setup requests keep their original authenticated base.
-    let setup = include_str!("desktop_setup.js")
+    let setup = crate::desktop_setup::navigation_script()
         .replace(r"trial\/", r"app\/")
         .replace(
             "new URL('api/' + path, location.href)",
@@ -66,7 +76,17 @@ mod tests {
             "http://127.0.0.1:8015/app/{}/",
             "a".repeat(32)
         )));
+        assert_eq!(
+            desktop_port(&format!("http://127.0.0.1:8016/app/{}/", "a".repeat(32))),
+            Ok(8016)
+        );
+        assert_eq!(
+            desktop_port(&format!("http://127.0.0.1:8015/app/{}/", "a".repeat(32))),
+            Ok(8015)
+        );
         for home in [
+            "http://127.0.0.1:8017/app/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+            "http://127.0.0.1:8016/app/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/?wrong=1",
             "http://127.0.0.1:8015/session/token",
             "http://127.0.0.1:8015/app/not-an-id/",
             "http://localhost:8015/app/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
@@ -95,5 +115,11 @@ mod tests {
         assert!(rejected.contains("const seiyaModelsHome=null"));
         assert!(!rejected.contains("untrusted()"));
         assert!(!rejected.contains("id=\"setup\""));
+        let test_port = render(Some(&format!(
+            "http://127.0.0.1:8016/app/{}/",
+            "c".repeat(32)
+        )));
+        assert!(test_port.contains("const seiyaModelsHome=\"http://127.0.0.1:8016/app/"));
+        assert!(test_port.contains("id=\"setup\""));
     }
 }

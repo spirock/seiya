@@ -1,7 +1,7 @@
 // Same chat surface, compiled setup controls only. No frame/eval/remote HTML.
 const seiyaModelsBase=(()=>{
  try{if(typeof seiyaModelsHome!=='string')return null;const url=new URL(seiyaModelsHome),current=new URL(location.href);
-  if(url.origin!==current.origin||url.protocol!=='http:'||url.hostname!=='127.0.0.1'||url.port!=='8015'||url.username||url.password||url.search||url.hash||!/^\/app\/[a-f0-9]{32}\/$/i.test(url.pathname))return null;
+  if(url.origin!==current.origin||url.protocol!=='http:'||url.hostname!=='127.0.0.1'||!['8015','8016'].includes(url.port)||url.username||url.password||url.search||url.hash||!/^\/app\/[a-f0-9]{32}\/$/i.test(url.pathname))return null;
   return url;
  }catch{return null;}
 })();
@@ -59,3 +59,4 @@ if(typeof seiyaShowDiagnostics==='function'){
 }
 const seiyaModelsLink=document.getElementById('seiyaModelsSettingsLink');
 if(seiyaModelsLink)seiyaModelsLink.onclick=event=>{event.preventDefault();seiyaOpenSettings('models');};
+function seiyaSetupSaved(){seiyaCloseSettings();$('status').textContent='Configuración guardada sin iniciar motores. Guardar no recupera un runtime bloqueado.';}

@@ -23,6 +23,16 @@ struct Baseline {
 fn revision(baseline: &Baseline) -> Vec<u8> {
     Sha256::digest(serde_json::to_vec(baseline).expect("baseline serialization")).to_vec()
 }
+fn readiness_deadline(profile: &[u8]) -> std::result::Result<std::time::Duration, String> {
+    let config = desktop_config::check_bytes(profile).map_err(|e| e.code.to_owned())?;
+    // Image readiness includes rehashing three pinned files (~10GB). This is
+    // still a bounded host-start deadline, never a generation or memory grant.
+    Ok(std::time::Duration::from_secs(if config.images.is_some() {
+        600
+    } else {
+        30
+    }))
+}
 impl WebAdapter {
     pub(crate) fn new() -> std::result::Result<Self, String> {
         let home = PathBuf::from(std::env::var_os("HOME").ok_or("launcher_home_required")?)
@@ -93,6 +103,30 @@ impl Adapter for WebAdapter {
     }
     fn available(&self) -> bool {
         true
+    }
+    fn saved_host(&self) -> std::result::Result<Option<(Vec<u8>, bool)>, String> {
+        let base = root(&self.home);
+        if !base.exists() {
+            return Ok(None);
+        }
+        private_directory(&base).map_err(|_| "profile_directory_not_private")?;
+        let Some(bytes) = read_private(&self.manager()).map_err(str::to_owned)? else {
+            return Ok(None);
+        };
+        let managed: Managed =
+            serde_json::from_slice(&bytes).map_err(|_| "manager_invalid_schema")?;
+        if managed.version != 1 || !self.supports(&managed.draft) {
+            return Err("saved_host_review_required".into());
+        }
+        let baseline = self.baseline()?;
+        let expected = self.profile(&managed.draft, &baseline)?;
+        let value: serde_json::Value =
+            serde_json::from_slice(&expected).map_err(|_| "saved_host_profile_invalid")?;
+        if value != managed.profile {
+            return Err("saved_host_profile_changed".into());
+        }
+        let solo = managed.draft.roles.workers.is_empty() && managed.draft.roles.image.is_empty();
+        Ok(Some((expected, solo)))
     }
     fn snapshot(&self) -> std::result::Result<Snapshot, String> {
         let baseline = self.baseline()?;
@@ -218,6 +252,9 @@ impl Adapter for WebAdapter {
         setup_home: String,
     ) -> Work<'_, Engine> {
         Box::pin(async move {
+            let deadline = readiness_deadline(&profile)?;
+            let port = crate::settings_menu::desktop_port(&setup_home)
+                .map_err(|_| "invalid_setup_home")?;
             let (tx, mut ready) = oneshot::channel();
             let (mount, mut mounted) = oneshot::channel();
             // Local cancellation also handles startup timeout without leaving a
@@ -249,13 +286,15 @@ impl Adapter for WebAdapter {
                 let links = (&mut ready)
                     .await
                     .map_err(|_| "host_not_ready".to_owned())?;
-                if !valid_url(&links.bootstrap, true) || !valid_url(&links.home, false) {
+                if !valid_url_at(&links.bootstrap, true, port)
+                    || !valid_url_at(&links.home, false, port)
+                {
                     return Err("invalid_host_browser_url".into());
                 }
                 Ok((router, links))
             };
             let result = tokio::select! {
-                value=tokio::time::timeout(std::time::Duration::from_secs(30), startup)=>value.unwrap_or_else(|_|Err("host_start_timeout".into())),
+                value=tokio::time::timeout(deadline, startup)=>value.unwrap_or_else(|_|Err("host_start_timeout".into())),
                 value=&mut done=>{
                     forward.abort(); let _ = forward.await;
                     return Err(value.unwrap_or_else(|_| Err("host_task_failed".into())).err().unwrap_or_else(|| "host_ended_before_ready".into()));
@@ -299,6 +338,42 @@ impl Adapter for WebAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn saved_host_requires_confirmed_matching_private_manager() {
+        let fixture = crate::launcher::tests::Fixture::new();
+        fixture.profile();
+        let adapter = WebAdapter {
+            home: fixture.home.clone(),
+        };
+        assert!(adapter.saved_host().unwrap().is_none());
+        let snapshot = adapter.snapshot().unwrap();
+        let approved = adapter.review(snapshot.draft, snapshot.baseline).unwrap();
+        assert_eq!(
+            readiness_deadline(&approved.profile).unwrap(),
+            std::time::Duration::from_secs(30)
+        );
+        adapter.save(&approved).unwrap();
+        let original = fs::read(adapter.manager()).unwrap();
+        let (bytes, solo) = adapter.saved_host().unwrap().unwrap();
+        assert!(solo);
+        assert_eq!(bytes, approved.profile);
+        assert_eq!(fs::read(adapter.manager()).unwrap(), original);
+        let mut changed: serde_json::Value = serde_json::from_slice(&original).unwrap();
+        changed["profile"]["chat_images"] = json!(true);
+        fs::write(adapter.manager(), serde_json::to_vec(&changed).unwrap()).unwrap();
+        assert_eq!(
+            adapter.saved_host().unwrap_err(),
+            "saved_host_profile_changed"
+        );
+        fs::write(adapter.manager(), &original).unwrap();
+        let mut changed: serde_json::Value = serde_json::from_slice(&original).unwrap();
+        changed["draft"]["roles"]["brain"] = json!("unsupported-model");
+        fs::write(adapter.manager(), serde_json::to_vec(&changed).unwrap()).unwrap();
+        assert_eq!(
+            adapter.saved_host().unwrap_err(),
+            "saved_host_review_required"
+        );
+    }
     #[test]
     fn manager_example_matches_schema_without_touching_paths() {
         let mut value: serde_json::Value = serde_json::from_str(include_str!(
@@ -386,6 +461,10 @@ mod tests {
         draft.image_binary = f.home.join("engine").to_string_lossy().into_owned();
         draft.image_assets = f.home.join("models").to_string_lossy().into_owned();
         let reviewed = adapter.review(draft, snap.baseline).unwrap();
+        assert_eq!(
+            readiness_deadline(&reviewed.profile).unwrap(),
+            std::time::Duration::from_secs(600)
+        );
         assert!(
             desktop_config::check_bytes(&reviewed.profile)
                 .unwrap()
@@ -394,6 +473,10 @@ mod tests {
         assert!(adapter.effects().contains("image_generate"));
         adapter.save(&reviewed).unwrap();
         assert_eq!(fs::read(legacy).unwrap(), original);
+    }
+    #[test]
+    fn invalid_readiness_profile_cannot_extend_startup() {
+        assert!(readiness_deadline(b"{\"images\":{}}").is_err());
     }
 
     #[test]

@@ -16,6 +16,24 @@ async fn main() -> ExitCode {
         }
     }
     if let [flag] = args.as_slice() {
+        if flag == "--test-chat" {
+            return match seiya_server::desktop_setup::launch_test_chat().await {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("Seiya test chat: {e}");
+                    ExitCode::from(1)
+                }
+            };
+        }
+        if flag == "--preview" {
+            return match seiya_server::desktop_setup::launch_preview().await {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("Seiya preview: {e}");
+                    ExitCode::from(1)
+                }
+            };
+        }
         if flag == "--launch" {
             return match seiya_server::desktop_setup::launch().await {
                 Ok(()) => ExitCode::SUCCESS,
@@ -30,6 +48,10 @@ async fn main() -> ExitCode {
             return ExitCode::SUCCESS;
         }
         if flag == "--help" {
+            if cfg!(debug_assertions) {
+                println!("Development chat test: seiya-desktop --test-chat (http://localhost:8016/app/, explicit host start, normal runtime guards)");
+            }
+            println!("UI-only tests: seiya-desktop --preview (fixed http://127.0.0.1:8016, memory-only settings, no models; production stays on 8015)");
             println!("Seiya Rust experimental\nWeb-first setup/chat shell: seiya-desktop --launch [--catalog ABSOLUTE_FILE]\nOffline local text catalogue: --check-catalog FILE\nCatalogue backend: externally managed local OpenAI-compatible engines on Windows/Linux/macOS; no bundled engine, model downloads or automatic inference. Existing HTML/CSS/JavaScript retained.\nOffline macOS MLX profile: seiya-desktop --check-config FILE\nmacOS manual host: --serve --config FILE --approval manual-portable-macos-web-no-automatic-inference --listen PRIVATE_IP:8015 --prefix-length BITS --certificate-der FILE --private-key-der FILE [--chat-only]\nNative --serve/MLX and pinned images remain macOS-only. Catalogue engines must be prepared and dedicated by the operator; no implicit remote fallback. On Windows use seiya-server.exe check-config for the separate API configuration.");
             return ExitCode::SUCCESS;
         }

@@ -56,6 +56,13 @@ La respuesta de chat **no confirma generación terminada**: el panel existente
 ofrece estado observado, cancelar, Ver imagen y Descargar PNG tras validación.
 No se ejecuta un segundo turno automático de síntesis. Sin visión ni control PC.
 
+Para un trabajo inequívocamente enlazado al mensaje, la UI muestra debajo
+estado, ID y cancelación. Una barra indeterminada aparece solo en fases
+activas: el broker anuncia `progress_percent=null` y no se estima porcentaje.
+Un trabajo manual o histórico ambiguo permanece en el panel de fallback,
+sin adjudicarlo a otro mensaje. Las seis fuentes frontend congeladas no se
+modificaron; el complemento JS no cambia permisos ni genera una imagen.
+
 El puente JS nuevo conserva los seis assets congelados y el diseño. Guarda la
 referencia antes de enviar, ligada a la conversación; refrescar no reenvía.
 Si el envío es incierto, conserva el mismo mensaje/ID y consulta el panel; no
@@ -114,6 +121,13 @@ propios, sin marcadores pendientes; no retry ni relajación de límites. Por tan
 la integración sigue validada con fixtures, **no end-to-end real** en este equipo.
 Hace falta resolver el presupuesto de recursos y un nuevo ensayo autorizado;
 no sustituir automáticamente el modelo ni cerrar otras aplicaciones.
+
+En un ensayo posterior de 8016, una solicitud llegó al broker pero terminó
+`blocked/permission_or_resources` antes de iniciar el ejecutable de imagen,
+sin PNG, con cleanup confirmado y sin cuarentena nueva. Ese código agrupa
+varias guardas previas: la evidencia no identifica la causa exacta ni permite
+afirmar que Qwen-Image genere desde chat en este dispositivo. La presentación
+se verificó con un navegador y datos sintéticos, no con un PNG real.
 
 Regresión final de recuperación:499 pruebas Rust,196 Python y8 suites Node
 correctas en ejecución serial fuera del árbol iCloud;25 ignoradas, incluido el

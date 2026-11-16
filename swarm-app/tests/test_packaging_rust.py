@@ -9,6 +9,7 @@ import sys
 import tarfile
 import tempfile
 import shutil
+import struct
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -51,6 +52,52 @@ def members(deb):
 
 
 class RustPackagingTests(unittest.TestCase):
+    def test_approved_icon_manifest_and_multiresolution_containers(self):
+        folder = build.ROOT / 'packaging/icons'
+        manifest = json.loads((folder / 'manifest.json').read_text())
+        source = build.ROOT.parent / manifest['source']
+        self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), manifest['source_sha256'])
+        for size in build.ICON_SIZES:
+            png = build.icon_asset(f'seiya-{size}.png')
+            self.assertEqual(png[:8], b'\x89PNG\r\n\x1a\n')
+            self.assertEqual(struct.unpack('>II', png[16:24]), (size, size))
+        ico = build.icon_asset('seiya.ico')
+        self.assertEqual(struct.unpack('<HHH', ico[:6]), (0, 1, 7))
+        offset = 6 + 7 * 16
+        for index, size in enumerate((16, 24, 32, 48, 64, 128, 256)):
+            w, h, colors, reserved, planes, bits, length, start = struct.unpack_from('<BBBBHHII', ico, 6 + index * 16)
+            self.assertEqual((w, h, colors, reserved, planes, bits, start), (size % 256, size % 256, 0, 0, 1, 32, offset))
+            self.assertEqual(ico[start:start + length], build.icon_asset(f'seiya-{size}.png'))
+            offset += length
+        self.assertEqual(offset, len(ico))
+        icns = build.icon_asset('seiya.icns')
+        self.assertEqual(icns[:4], b'icns')
+        self.assertEqual(struct.unpack('>I', icns[4:8])[0], len(icns))
+        offset = 8
+        for kind, size in [(b'icp4', 16), (b'icp5', 32), (b'icp6', 64), (b'ic07', 128), (b'ic08', 256), (b'ic09', 512), (b'ic10', 1024)]:
+            self.assertEqual(icns[offset:offset + 4], kind)
+            length = struct.unpack('>I', icns[offset + 4:offset + 8])[0]
+            self.assertEqual(icns[offset + 8:offset + length], build.icon_asset(f'seiya-{size}.png'))
+            offset += length
+        self.assertEqual(offset, len(icns))
+        with self.assertRaises(SystemExit): build.icon_asset('../seiya.ico')
+
+    def test_icons_are_registered_hashed_and_tampering_is_rejected(self):
+        for mac in (False, True):
+            with self.subTest(mac=mac), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp); source = binaries(root / 'bin', mac=mac)
+                stage = root / 'stage'; build.rust_stage(stage, source, mac, 'amd64', '2.39')
+                mapping = build.rust_icons(mac)
+                for dest, name in mapping.items():
+                    self.assertEqual((stage / dest).read_bytes(), build.icon_asset(name))
+                if mac:
+                    plist = plistlib.loads((stage / 'Applications/Seiya Rust.app/Contents/Info.plist').read_bytes())
+                    self.assertEqual(plist['CFBundleIconFile'], 'seiya.icns')
+                else:
+                    self.assertIn('Icon=seiya\n', (stage / 'usr/share/applications/seiya-rust.desktop').read_text())
+                target = stage / next(iter(mapping)); target.write_bytes(b'tampered icon')
+                with self.assertRaises(SystemExit): build.verify_rust_stage(stage, mac, 'amd64')
+
     def test_rust_dmg_contains_app_and_applications_link_not_nested_installer(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);source=binaries(root/'bin',mac=True,arch='arm64');output=root/'test.dmg'

@@ -15,6 +15,12 @@ se mantiene hasta confirmar el cierre del árbol propio mediante OwnedChild.
 Los nombres de fase indican el paso del adaptador, no una medición de pesos
 residentes ni porcentaje de carga. El arranque del host no inicia inferencias.
 
+El shell desktop mantiene readiness acotado: 30s con solo texto y hasta
+600s cuando el perfil válido incluye imagen, porque el preflight revalida
+por SHA256 los tres assets (~10GB) antes de anunciar `running`. Esto no
+amplía el deadline ni el presupuesto de swap de la generación ni evita
+cancelación explícita; `starting` no acredita que se cargó un modelo.
+
 No adopta el servicio compartido11434 ni cierra procesos ajenos. Los inventarios
 vacíos son precondiciones, no prueba de unload; keep_alive=0 no se usa como
 certificado de liberación. Cerrar procesos propios confirma su terminación, no
@@ -74,6 +80,13 @@ propietarios, operaciones y recursos con intervención operativa; no eliminarlo
 para reintentar. Los binarios antiguos no reconocen el journal nuevo: no usarlos
 como rollback tras un crash sin revisar antes el runtime. Si no se puede persistir
 cuarentena, se retiene el lease durante el proceso, sin garantía ante fallo de disco.
+
+Excepción exclusiva de desarrollo `--test-chat` en8016 (ADR0070): una operación
+histórica `RootExited` verificada en los dos dominios permanece sin modificar y
+sin declarar cleanup confirmado. Tras comprobar PID/grupo/puerto original,
+inventario vacío y presión normal, el ensayo puede usar un journal nuevo
+`native-model-test-8016.inflight`; un fallo nuevo bloquea de nuevo. Release y
+8015 mantienen el criterio previo. No acredita liberación física ni inferencia.
 
 Pendientes: ensayo aislado y autorizado de compatibilidad, carga/descarga física,
 imagen/calidad/cancelación reales y sesión sostenida. Sin instalación, modelos

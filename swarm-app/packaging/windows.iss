@@ -29,8 +29,12 @@ CloseApplications=no
 RestartApplications=no
 Uninstallable=yes
 SignedUninstaller=no
+SetupIconFile={#StageDir}\seiya.ico
+UninstallDisplayIcon={app}\seiya.ico
 
 [Files]
+Source: "{#StageDir}\seiya.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#StageDir}\ICONOS_APP.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StageDir}\seiya-desktop.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StageDir}\seiya-server.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StageDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
@@ -51,5 +55,5 @@ Source: "{#StageDir}\desktop-chat-images.example.json"; DestDir: "{app}"; Flags:
 Source: "{#StageDir}\local-models-images.example.json"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\Seiya Rust Experimental"; Filename: "{app}\seiya-desktop.exe"; Parameters: "--launch"; WorkingDir: "{app}"
-Name: "{autoprograms}\Seiya Rust Experimental - Ayuda"; Filename: "{app}\Seiya-Rust-Help.cmd"; WorkingDir: "{app}"
+Name: "{autoprograms}\Seiya Rust Experimental"; Filename: "{app}\seiya-desktop.exe"; Parameters: "--launch"; WorkingDir: "{app}"; IconFilename: "{app}\seiya.ico"
+Name: "{autoprograms}\Seiya Rust Experimental - Ayuda"; Filename: "{app}\Seiya-Rust-Help.cmd"; WorkingDir: "{app}"; IconFilename: "{app}\seiya.ico"

@@ -262,6 +262,7 @@ async fn page_includes_opt_in_bridge_and_http_auth_origin_precede_any_generation
     )
     .unwrap();
     assert!(text.contains("const seiyaChatWithoutImages=seiyaChatFetch"));
+    assert!(text.contains("const seiyaPanelImageRender=seiyaRenderImages"));
     assert!(text.contains("Imágenes locales"));
     assert!(text.contains("if(seiyaChatImageDeletionBlocked())return;"));
     assert!(text.contains("Recuperar imagen registrada"));

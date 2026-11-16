@@ -2,16 +2,26 @@
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm'), assert = require('node:assert/strict');
 const root = path.join(__dirname, '../../crates/seiya-server/src');
 const markup = fs.readFileSync(path.join(root, 'desktop_setup.html'), 'utf8');
-const code = fs.readFileSync(path.join(root, 'desktop_setup.js'), 'utf8');
+const original = fs.readFileSync(path.join(root, 'desktop_setup.js'), 'utf8');
+const initial = "let baseline = [], approval = null, busy = false, polling = false, runtimeAvailable = true;";
+const entry = "el('setupEnter').hidden = v.phase !== 'running';";
+const injectedInitial = "let baseline = [], approval = null, busy = false, polling = false, runtimeAvailable = true;\n   let seiyaInitialPhase = null, seiyaAutoEnterAttempted = false;";
+const injectedEntry = "el('setupEnter').hidden = v.phase !== 'running';\n       if (seiyaInitialPhase === null) seiyaInitialPhase = v.phase === 'starting' && v.restored_host ? 'running' : v.phase;\n       if (seiyaInitialPhase === 'running' && v.phase === 'running' && !busy && !seiyaAutoEnterAttempted) {\n         seiyaAutoEnterAttempted = true;\n         el('setupEnter').click();\n       }";
+assert.equal(original.split(initial).length,2);
+assert.equal(original.split(entry).length,2);
+const code = original.replace(initial,injectedInitial).replace(entry,injectedEntry).replace(
+  "if (v.saved) { const current = await api('detect'); baseline = current.baseline; }",
+  "if (v.saved) { const current = await api('detect'); baseline = current.baseline; if (!start && typeof seiyaSetupSaved === 'function') seiyaSetupSaved(); }");
 class Element {
   constructor(tag='input') { this.tag=tag; this.value=''; this.hidden=false; this.disabled=false; this.dataset={}; this.listeners={}; this.textContent=''; }
   addEventListener(event, fn) { this.listeners[event]=fn; }
   emit(event) { return this.listeners[event]?.({preventDefault(){}}); }
+  click() { return this.emit('click'); }
   set innerHTML(_) { throw Error('unsafe HTML insertion'); }
 }
 const tick=()=>new Promise(r=>setImmediate(r));
-async function fixture(available=true, stored=new Map()) {
-  const els={}, picks=[], calls=[], nav=[]; let lost=false, phase='unconfigured', hold, release;
+async function fixture(available=true, stored=new Map(), initialPhase='unconfigured', restored=false) {
+  const els={}, picks=[], calls=[], nav=[]; let lost=false, phase=initialPhase, hold, release, enterUrl='http://127.0.0.1:8015/session/'+ 'a'.repeat(64);
   for (const match of markup.matchAll(/<(\w+)[^>]*\bid="([^"]+)"[^>]*>/g)) els[match[2]]=new Element(match[1]);
   const setupIds=Object.keys(els);
   for (const match of markup.matchAll(/<button[^>]*data-pick="([^"]+)"[^>]*>/g)) { const e=new Element('button');e.dataset.pick=match[1];picks.push(e); }
@@ -19,7 +29,8 @@ async function fixture(available=true, stored=new Map()) {
   const buttons=()=>[...Object.values(els).filter(e=>e.tag==='button'),...picks];
   const draft={llm_binary:'/synthetic/engine',model_store:'/synthetic/models',image_binary:'',image_assets:'',roles:{brain:'gemma4:e2b-mlx',workers:[],image:''}};
   const storageCalls=[];
-  const ctx={URL,JSON,Error,Object,Array,document:{getElementById:get,querySelectorAll(selector){
+  let saved=0;
+  const ctx={seiyaSetupSaved(){saved++},URL,JSON,Error,Object,Array,document:{getElementById:get,querySelectorAll(selector){
     if(selector==='[data-pick]')return picks;
     if(selector==='#setup button')return buttons();
     if(selector==='#setup input, #setup textarea')return setupIds.map(id=>els[id]).filter(e=>['input','textarea'].includes(e.tag));
@@ -32,20 +43,39 @@ async function fixture(available=true, stored=new Map()) {
     const name=url.pathname.split('/').at(-1), body=options.body?JSON.parse(options.body):null; calls.push({name,body});
     let value={};
     if(name==='detect')value={draft,baseline:[],warning:null};
-    else if(name==='status')value={platform:available?'macos':'windows',runtime_available:available,phase,error:null};
+    else if(name==='status')value={platform:available?'macos':'windows',runtime_available:available,phase,error:null,restored_host:restored};
     else if(name==='review')value={approval:'one-use',draft:body.draft,executable:available&&body.draft.roles.brain==='gemma4:e2b-mlx',effects:'filesystem only'};
     else if(name==='confirm'){if(hold)await new Promise(r=>release=r);if(lost){lost=false;throw Error('response lost')}value={saved:true};phase=body.start?'starting':'saved';}
     else if(name==='pick')value={path:'/synthetic/chosen'};
-    else if(name==='enter')value={url:'http://127.0.0.1:8015/session/'+ 'a'.repeat(64)};
+    else if(name==='enter')value={url:enterUrl};
     else if(name==='stop')phase='stopping';
     else if(name!=='quit')throw Error('unexpected endpoint '+name);
     return{ok:true,status:name==='quit'?202:200,json:async()=>value};
   }};
   vm.createContext(ctx);vm.runInContext(code,ctx);await tick();
-  return{get,picks,calls,nav,stored,storageCalls,ctx,lose(){lost=true},hold(){hold=true},release(){hold=false;release()}};
+  return{get,picks,calls,nav,stored,storageCalls,ctx,saved:()=>saved,phase(v){phase=v},enterUrl(v){enterUrl=v},lose(){lost=true},hold(){hold=true},release(){hold=false;release()}};
 }
 (async()=>{
-  const f=await fixture();
+   const running=await fixture(true,new Map(),'running');
+   if(!running.nav.length){await running.ctx.poll();await tick();}
+   assert.equal(running.nav.length,1);
+   assert.equal(running.calls.filter(c=>c.name==='enter').length,1);
+   assert.ok(running.calls.every(c=>!['review','confirm','stop'].includes(c.name)));
+   await running.ctx.poll();assert.equal(running.calls.filter(c=>c.name==='enter').length,1);
+   const recovering=await fixture(true,new Map(),'starting',true);
+   recovering.phase('running');await recovering.ctx.poll();await tick();
+   assert.equal(recovering.nav.length,1,'restored host enters chat once ready');
+   await recovering.ctx.poll();assert.equal(recovering.nav.length,1);
+   const delayed=await fixture();
+   delayed.phase('running');await delayed.ctx.poll();await tick();
+   assert.equal(delayed.calls.filter(c=>c.name==='enter').length,0,'newly started host must not auto-enter after initial setup');
+   const invalid=await fixture(true,new Map(),'running');
+   invalid.enterUrl('https://evil.example/session/'+ 'a'.repeat(64));
+   if(!invalid.calls.some(c=>c.name==='enter')){await invalid.ctx.poll();await tick();}
+   assert.equal(invalid.nav.length,0);
+   await invalid.ctx.poll();assert.equal(invalid.calls.filter(c=>c.name==='enter').length,1,'do not retry uncertain auto-enter');
+   assert.equal(invalid.get('setupEnter').hidden,false,'manual entry remains available');
+   const f=await fixture();
   assert.ok(f.calls.every(v=>v.body===null));
   assert.equal(f.get('prompt').disabled,true);assert.equal(f.get('send').disabled,true);
   assert.ok(!f.storageCalls.some(([,key])=>key.includes('chats')));
@@ -63,6 +93,7 @@ async function fixture(available=true, stored=new Map()) {
   assert.equal(f.get('setupStart').disabled,true);assert.match(f.get('setupSummary').textContent,/<img/);
   await f.get('setupSave').emit('click');await tick();
   assert.deepEqual(f.calls.filter(c=>c.name==='confirm').at(-1).body,{approval:'one-use',start:false});
+  assert.equal(f.saved(),1);
   f.get('setupBrain').value='gemma4:e2b-mlx';f.get('setupForm').emit('submit');await tick();
   f.hold();const saving=f.get('setupStart').emit('click');await tick();
   assert.equal(f.get('setupBrain').disabled,true);
@@ -73,6 +104,7 @@ async function fixture(available=true, stored=new Map()) {
   const count=f.calls.filter(c=>c.name==='confirm').length;
   await f.get('setupStart').emit('click');await tick();await f.ctx.poll();
   assert.equal(f.calls.filter(c=>c.name==='confirm').length,count+1);
+  assert.equal(f.saved(),1,'start/lost response must not close settings as saved');
   assert.equal(f.get('setupApproval').hidden,true);
   await f.picks[0].emit('click');assert.equal(f.get('setupLlm').value,'/synthetic/chosen');
   const windows=await fixture(false,f.stored);

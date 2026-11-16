@@ -2,8 +2,9 @@
 import argparse
 import hashlib
 import json
+import plistlib
 from pathlib import Path
-from build import rust_binary
+from build import rust_binary, icon_asset
 
 
 def inspect(root, arch, revision=None):
@@ -23,8 +24,8 @@ def inspect(root, arch, revision=None):
             files.add(path.relative_to(root).as_posix())
     expected = {'Seiya Rust.app/Contents/' + name for name in (
         'Info.plist', 'MacOS/Seiya', 'MacOS/seiya-desktop', 'MacOS/seiya-server',
-        'Resources/Seiya.command', *('Resources/' + n for n in (
-            'README.md','APP_RUST.md','PARIDAD_RUST.md','BACKENDS_LOCALES.md',
+        'Resources/Seiya.command', 'Resources/seiya.icns', *('Resources/' + n for n in (
+            'README.md','APP_RUST.md','PARIDAD_RUST.md','BACKENDS_LOCALES.md','ICONOS_APP.md',
             'IMAGENES_DESDE_CHAT.md','RESIDENCIA_NATIVA.md','PRUEBA_INSTALADOR.md','CHAT_TEXTO.md',
             'desktop-chat-images.example.json','local-models-images.example.json',
             'LICENSE','THIRD_PARTY_NOTICES.md','desktop.example.json',
@@ -33,6 +34,11 @@ def inspect(root, arch, revision=None):
         raise SystemExit('DMG app differs from explicit allowlist.')
     resources = app / 'Contents/Resources'
     info = json.loads((resources / 'BUILD-INFO.json').read_text())
+    digest = hashlib.sha256(icon_asset('seiya.icns')).hexdigest()
+    if (info.get('icons') != {'Applications/Seiya Rust.app/Contents/Resources/seiya.icns': digest}
+            or hashlib.sha256((resources / 'seiya.icns').read_bytes()).hexdigest() != digest
+            or plistlib.loads((app / 'Contents/Info.plist').read_bytes()).get('CFBundleIconFile') != 'seiya.icns'):
+        raise SystemExit('DMG icon metadata/registration/hash mismatch.')
     if info['platform'] != 'macos' or info['arch'] != arch or (revision and info['revision'] != revision):
         raise SystemExit('DMG app build target/revision mismatch.')
     for name in ('seiya-desktop','seiya-server'):

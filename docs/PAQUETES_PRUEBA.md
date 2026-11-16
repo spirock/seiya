@@ -8,6 +8,12 @@ del build en README/BUILD-INFO.json; no basta con el nombre versión0.1.0.
 
 ## Instaladores Rust nuevos
 
+Iconos en las fuentes posteriores a610d697: Pegaso constelación en ICNS para app
+macOS, ICO para setup/accesos Windows y PNG hicolor para Linux. Recursos precalculados,
+hashes y allowlists verificados sin instalar. [Fuente, regeneración y límites](ICONOS_APP.md).
+No implica publicación de estos iconos en los enlaces anteriores ni cambia el
+icono embebido del ejecutable Windows portable.
+
 Fuentes actuales: `--launch` abre primero un asistente web sin motores/perfil,
 con gestor de asignaciones y confirmación. El acceso macOS y el acceso principal
 Windows usan esa entrada; Windows no obtiene backend de inferencia por compartir

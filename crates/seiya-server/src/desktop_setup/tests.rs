@@ -6,6 +6,275 @@ use axum::{
 use http_body_util::BodyExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[cfg(not(debug_assertions))]
+#[tokio::test]
+async fn release_does_not_register_direct_test_entry_or_start_test_chat() {
+    let address = "127.0.0.1:8016".parse().unwrap();
+    let (tx, _) = watch::channel(false);
+    let (app, _, _) = application_at_with_key(
+        Setup::new(Arc::new(Unsupported), tx),
+        address,
+        Some("a".repeat(64)),
+    );
+    let response = app
+        .oneshot(
+            Request::get("/app/")
+                .header(header::HOST, "localhost:8016")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 404);
+    assert_eq!(
+        launch_test_chat().await.unwrap_err(),
+        "development_test_chat_only"
+    );
+}
+
+#[tokio::test]
+async fn development_test_entry_creates_cookie_without_bootstrap_and_survives_restart() {
+    let address = "127.0.0.1:8016".parse().unwrap();
+    let key = format!(
+        "{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    );
+    let make = || {
+        let (tx, _) = watch::channel(false);
+        application_at_with_key(
+            Setup::new(Arc::new(Unsupported), tx),
+            address,
+            Some(key.clone()),
+        )
+    };
+    let (app, _, _) = make();
+    let request = |router: &Router, path: &str, cookie: &str, host: &str, origin: Option<&str>| {
+        let mut r = Request::builder().uri(path).header(header::HOST, host);
+        if !cookie.is_empty() {
+            r = r.header(header::COOKIE, cookie);
+        }
+        if let Some(o) = origin {
+            r = r.header(header::ORIGIN, o);
+        }
+        let router = router.clone();
+        async move {
+            router
+                .oneshot(r.body(Body::empty()).unwrap())
+                .await
+                .unwrap()
+        }
+    };
+    let response = request(&app, "/app/", "", "localhost:8016", None).await;
+    assert_eq!(response.status(), 303);
+    let first_home = response.headers()[header::LOCATION].to_str().unwrap();
+    assert!(first_home.starts_with("/app/") && first_home != "/app/");
+    let raw = response.headers()[header::SET_COOKIE].to_str().unwrap();
+    assert!(
+        raw.contains("seiya_test_access=")
+            && raw.contains("Path=/app/")
+            && raw.contains("HttpOnly")
+    );
+    assert!(raw.contains("Max-Age=315360000") && !raw.contains("seiya_access="));
+    let cookie = raw.split(';').next().unwrap();
+    let restarted = make().0;
+    for router in [&app, &restarted] {
+        let response = request(router, "/app/", "", "localhost:8016", None).await;
+        assert_eq!(response.status(), 303);
+        assert!(response.headers().contains_key(header::SET_COOKIE));
+        let path = response.headers()[header::LOCATION].to_str().unwrap();
+        assert!(path.starts_with("/app/"));
+        let api = format!("{}api/status", path);
+        assert_eq!(
+            request(router, &api, "", "localhost:8016", None)
+                .await
+                .status(),
+            401
+        );
+        assert_eq!(
+            request(router, &api, cookie, "localhost:8016", None)
+                .await
+                .status(),
+            200
+        );
+        let page = request(router, path, cookie, "localhost:8016", None).await;
+        assert_eq!(page.status(), 200);
+        let html = String::from_utf8(
+            page.into_body()
+                .collect()
+                .await
+                .unwrap()
+                .to_bytes()
+                .to_vec(),
+        )
+        .unwrap();
+        assert!(
+            html.contains("seiyaInitialSettingsMenu")
+                && !html.contains("VISTA PREVIA · Puerto8016")
+        );
+        assert_eq!(
+            request(router, &api, "seiya_access=invalid", "localhost:8016", None)
+                .await
+                .status(),
+            401
+        );
+        assert_eq!(
+            request(router, &api, cookie, "127.0.0.1:8015", None)
+                .await
+                .status(),
+            403
+        );
+        assert_eq!(
+            request(router, "/app/", cookie, "127.0.0.1:8015", None)
+                .await
+                .status(),
+            403
+        );
+        assert_eq!(
+            request(
+                router,
+                "/app/",
+                "",
+                "localhost:8016",
+                Some("http://127.0.0.1:8016")
+            )
+            .await
+            .status(),
+            403
+        );
+        assert_eq!(
+            request(router, "/app/", "", "127.0.0.1:8016", None)
+                .await
+                .status(),
+            303
+        );
+    }
+}
+
+#[cfg(debug_assertions)]
+#[tokio::test]
+async fn development_enter_preserves_browser_origin_without_consuming_link_on_rejection() {
+    let (tx, _) = watch::channel(false);
+    let state = Setup::new(Arc::new(Unsupported), tx);
+    let (app, _, home) = application_at_with_key(
+        state.clone(),
+        "127.0.0.1:8016".parse().unwrap(),
+        Some("a".repeat(64)),
+    );
+    let first = format!("http://127.0.0.1:8016/session/{}", "b".repeat(64));
+    {
+        let mut c = state.control.lock().await;
+        c.phase = "running";
+        c.bootstrap = Some(first.clone());
+        c.chat = Some(format!("http://127.0.0.1:8016/app/{}/", "c".repeat(32)));
+    }
+    let path = reqwest::Url::parse(&home).unwrap().path().to_owned();
+    let entry = app
+        .clone()
+        .oneshot(
+            Request::get("/app/")
+                .header(header::HOST, "localhost:8016")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let cookie = entry.headers()[header::SET_COOKIE]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap();
+    let enter = format!("{path}api/enter");
+    let send = |host: &str, origin: &str| {
+        Request::post(&enter)
+            .header(header::HOST, host)
+            .header(header::ORIGIN, origin)
+            .header(header::COOKIE, cookie)
+            .body(Body::empty())
+            .unwrap()
+    };
+    assert_eq!(
+        app.clone()
+            .oneshot(send("localhost:8016", "http://127.0.0.1:8016"))
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    assert!(state.control.lock().await.bootstrap.is_some());
+    let response = app
+        .clone()
+        .oneshot(send("localhost:8016", "http://localhost:8016"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        json_body(response).await["url"],
+        first.replace("127.0.0.1", "localhost")
+    );
+    assert!(state.control.lock().await.bootstrap.is_some());
+    assert_eq!(
+        json_body(
+            app.clone()
+                .oneshot(send("localhost:8016", "http://localhost:8016"))
+                .await
+                .unwrap()
+        )
+        .await["url"],
+        first.replace("127.0.0.1", "localhost")
+    );
+    assert_eq!(
+        json_body(
+            app.oneshot(send("127.0.0.1:8016", "http://127.0.0.1:8016"))
+                .await
+                .unwrap()
+        )
+        .await["url"],
+        first
+    );
+}
+
+#[tokio::test]
+async fn normal_desktop_enter_consumes_first_link() {
+    let (tx, _) = watch::channel(false);
+    let state = Setup::new(Arc::new(Unsupported), tx);
+    let _ = application(state.clone());
+    let first = format!("http://127.0.0.1:8015/session/{}", "b".repeat(64));
+    let home = format!("http://127.0.0.1:8015/app/{}/", "c".repeat(32));
+    {
+        let mut c = state.control.lock().await;
+        c.phase = "running";
+        c.bootstrap = Some(first.clone());
+        c.chat = Some(home.clone());
+    }
+    for expected in [&first, &home] {
+        let r = Request::post("/api/enter")
+            .header(header::HOST, "127.0.0.1:8015")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            json_body(enter(State(state.clone()), r).await).await["url"],
+            *expected
+        );
+    }
+}
+
+#[tokio::test]
+async fn initial_shell_contains_settings_navigation_not_a_fixed_popup() {
+    let Html(html) = page().await;
+    assert!(!html.contains("position:fixed"));
+    assert!(html.contains("seiyaInitialSettingsMenu"));
+    assert!(html.contains("Configuración de modelos"));
+    assert!(html.contains("Configuración general"));
+    assert!(html.contains("function seiyaSetupSaved()"));
+    assert!(html.contains("seiyaInitialPhase === 'running'"));
+    assert!(html.contains("seiyaAutoEnterAttempted = true"));
+    assert!(html.contains("el('setupEnter').click()"));
+    assert!(html.contains("el('prompt').disabled = true"));
+    assert!(!html.contains("<iframe"));
+}
+
 #[tokio::test]
 async fn platforms_without_adapter_have_inert_common_web_and_cannot_start() {
     let (tx, _) = watch::channel(false);
@@ -28,6 +297,8 @@ async fn platforms_without_adapter_have_inert_common_web_and_cannot_start() {
 struct Fake {
     saves: AtomicUsize,
     starts: AtomicUsize,
+    stored: bool,
+    invalid: bool,
 }
 impl Adapter for Fake {
     fn available(&self) -> bool {
@@ -39,6 +310,15 @@ impl Adapter for Fake {
             baseline: vec![],
             warning: None,
         })
+    }
+    fn saved_host(&self) -> Result<Option<(Vec<u8>, bool)>, String> {
+        if self.invalid {
+            Err("saved_host_profile_changed".into())
+        } else if self.stored {
+            Ok(Some((vec![], true)))
+        } else {
+            Ok(None)
+        }
     }
     fn review(&self, draft: Draft, baseline: Vec<u8>) -> Result<Approval, String> {
         Ok(Approval {
@@ -203,6 +483,8 @@ async fn fixture() -> (Router, String, String, Arc<Fake>, Arc<Setup>) {
     let fake = Arc::new(Fake {
         saves: AtomicUsize::new(0),
         starts: AtomicUsize::new(0),
+        stored: false,
+        invalid: false,
     });
     let (tx, _) = watch::channel(false);
     let state = Setup::new(fake.clone(), tx);
@@ -220,6 +502,59 @@ async fn fixture() -> (Router, String, String, Arc<Fake>, Arc<Setup>) {
     let prefix = r.headers()[header::LOCATION].to_str().unwrap().to_owned();
     assert_eq!(call(&app, &path, "", "", None).await.status(), 403);
     (app, prefix, cookie, fake, state)
+}
+#[tokio::test]
+async fn saved_host_starts_once_without_saving_or_dispatching_a_model() {
+    for (stored, invalid, expected) in [
+        (false, false, "unconfigured"),
+        (true, true, "blocked"),
+        (true, false, "running"),
+    ] {
+        let fake = Arc::new(Fake {
+            saves: AtomicUsize::new(0),
+            starts: AtomicUsize::new(0),
+            stored,
+            invalid,
+        });
+        let (tx, _) = watch::channel(false);
+        let state = Setup::new(fake.clone(), tx);
+        let (app, _, _) = application(state.clone());
+        restore_saved_host(&state).await;
+        if stored && !invalid {
+            tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    if state.control.lock().await.phase == "running" {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+        }
+        let status = status(State(state.clone())).await.0;
+        assert_eq!(status["phase"], expected);
+        assert_eq!(status["restored_host"], stored && !invalid);
+        assert_eq!(fake.saves.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            fake.starts.load(Ordering::SeqCst),
+            usize::from(stored && !invalid)
+        );
+        if invalid {
+            assert_eq!(status["error"], "saved_host_profile_changed");
+        }
+        if stored && !invalid {
+            let _ = stop(State(state.clone())).await;
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while state.control.lock().await.stop.is_some() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+        }
+        drop(app);
+    }
 }
 #[tokio::test]
 async fn inert_shell_preserves_styles_and_requires_auth_before_side_effects() {
