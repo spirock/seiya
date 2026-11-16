@@ -621,7 +621,7 @@ mod tests {
         assert!(reviewed_group_is_empty(1).is_err());
         let f = Fixture::new();
         assert_eq!(
-            f.coord.with_development_review().err().as_deref(),
+            f.coord.clone().with_development_review().err().as_deref(),
             Some("development_review_not_allowed")
         );
     }
