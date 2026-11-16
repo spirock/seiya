@@ -22,6 +22,21 @@ const TEST_INFLIGHT: &str = "native-model-test-8016.inflight";
 const TEST_QUARANTINE: &str = "test-cleanup-uncertain.json";
 const REVIEWED_INFLIGHT: &str = "native-model-test-8016-reviewed.inflight";
 const REVIEWED_QUARANTINE: &str = "test-reviewed-cleanup-uncertain.json";
+
+// Historical process-group review is implemented only by the macOS probe.
+// Other platforms must not treat an unverified group as empty.
+fn reviewed_group_is_empty(pid: u32) -> Result<bool, ()> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::probes::exited_group_is_empty(pid).map_err(|_| ())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = pid;
+        Err(())
+    }
+}
+
 fn marker_present(path: &Path) -> Result<bool, String> {
     match fs::symlink_metadata(path) {
         Ok(_) => Ok(true),
@@ -126,8 +141,7 @@ fn review_test(stable: &Path, base: &Path) -> Result<Option<ReviewedTest>, Strin
         || owner["pid"] != pid
         || cleanup["confirmed"] != false
         || cleanup["error"] != "OwnershipChanged"
-        || !crate::probes::exited_group_is_empty(pid)
-            .map_err(|_| "review_test_process_unavailable")?
+        || !reviewed_group_is_empty(pid).map_err(|_| "review_test_process_unavailable")?
     {
         return Err("review_test_unexpected_marker".into());
     }
@@ -171,7 +185,7 @@ impl Coordination {
     /// Only an explicitly reviewed debug desktop instance may select the
     /// alternate journal. The old observation remains unchanged and visible.
     pub fn with_development_review(mut self) -> Result<Self, String> {
-        if !cfg!(debug_assertions) || self.stable.is_none() {
+        if !cfg!(target_os = "macos") || !cfg!(debug_assertions) || self.stable.is_none() {
             return Err("development_review_not_allowed".into());
         }
         let stable = self.stable.as_ref().unwrap();
@@ -201,7 +215,7 @@ impl Coordination {
             Sha256::digest(private_marker(&canonical.join("owner.json"))?).into();
         let cleanup_hash: [u8; 32] =
             Sha256::digest(private_marker(&canonical.join("cleanup.json"))?).into();
-        if !crate::probes::exited_group_is_empty(pid).map_err(|_| "review_process_unavailable")? {
+        if !reviewed_group_is_empty(pid).map_err(|_| "review_process_unavailable")? {
             return Err("review_process_or_group_present".into());
         }
         let _reserved = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))
@@ -350,8 +364,7 @@ impl Coordination {
                 {
                     return Err("review_evidence_changed".into());
                 }
-                if !crate::probes::exited_group_is_empty(review.pid)
-                    .map_err(|_| "review_process_unavailable")?
+                if !reviewed_group_is_empty(review.pid).map_err(|_| "review_process_unavailable")?
                     || std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, review.port))
                         .is_err()
                 {
@@ -371,7 +384,7 @@ impl Coordination {
                         || Sha256::digest(private_marker(&test.evidence.join("cleanup.json"))?)
                             .as_slice()
                             != test.cleanup
-                        || !crate::probes::exited_group_is_empty(test.pid)
+                        || !reviewed_group_is_empty(test.pid)
                             .map_err(|_| "review_test_process_unavailable")?
                         || std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, test.port))
                             .is_err()
@@ -601,6 +614,18 @@ pub fn profile_lock(directory: &Path) -> Result<File, String> {
 mod tests {
     use super::*;
     use std::os::unix::fs::{symlink, DirBuilderExt};
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn unsupported_platform_cannot_approve_historical_process_group() {
+        assert!(reviewed_group_is_empty(1).is_err());
+        let f = Fixture::new();
+        assert_eq!(
+            f.coord.with_development_review().err().as_deref(),
+            Some("development_review_not_allowed")
+        );
+    }
+
     struct Fixture {
         root: PathBuf,
         coord: Coordination,
@@ -639,7 +664,7 @@ mod tests {
             fs::remove_dir_all(&self.root).unwrap();
         }
     }
-    #[cfg(debug_assertions)]
+    #[cfg(all(target_os = "macos", debug_assertions))]
     #[test]
     fn reviewed_dev_uses_new_journal_without_changing_historical_records() {
         let f = Fixture::new();
@@ -751,7 +776,7 @@ mod tests {
         let f = Fixture::new();
         assert!(f.coord.clone().with_development_review().is_err());
     }
-    #[cfg(debug_assertions)]
+    #[cfg(all(target_os = "macos", debug_assertions))]
     #[test]
     fn second_review_preserves_both_histories_and_rejects_new_uncertainty() {
         let f = Fixture::new();
