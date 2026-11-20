@@ -149,8 +149,9 @@ impl Store {
                 file.write_all(b)?;
             }
             file.sync_all()?;
+            drop(file);
             fs::rename(&temp, &target)?;
-            File::open(&self.root)?.sync_all()
+            crate::local_models::storage::sync_directory(&self.root).map_err(std::io::Error::other)
         })()
         .map_err(|_| "snapshot_commit".to_owned());
         if result.is_err() {

@@ -167,6 +167,11 @@ fn ollama_model_can_be_saved_without_catalogue_but_only_as_owned_runtime_profile
     let snap = adapter.snapshot().unwrap();
     let mut draft = snap.draft;
     draft.roles.brain = "gemma4:12b".into();
+    if !cfg!(target_os = "linux") {
+        assert!(!adapter.supports(&draft));
+        assert!(adapter.review(draft, snap.baseline).is_err());
+        return;
+    }
     assert!(adapter.supports(&draft));
     let approved = adapter.review(draft.clone(), snap.baseline).unwrap();
     let catalog = Catalog::parse(&approved.profile).unwrap();
