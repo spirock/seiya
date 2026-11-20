@@ -1,4 +1,18 @@
 use super::*;
+#[tokio::test(start_paused = true)]
+async fn desktop_remains_running_after_thirty_minutes_until_explicit_shutdown() {
+    let (tx, mut rx) = watch::channel(false);
+    let mut server = tokio::spawn(std::future::pending::<Result<(), std::io::Error>>());
+    let waiter = tokio::spawn(async move {
+        let ended = wait_for_desktop_shutdown(&mut rx, &mut server).await;
+        server.abort();
+        ended
+    });
+    tokio::time::advance(Duration::from_secs(3601)).await;
+    assert!(!waiter.is_finished());
+    tx.send_replace(true);
+    assert!(!waiter.await.unwrap());
+}
 use axum::{
     body::Body,
     http::{header, Request},

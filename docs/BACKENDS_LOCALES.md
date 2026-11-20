@@ -96,7 +96,9 @@ La detección al abrir no arranca procesos ni consulta11434. En Linux, la secci�
 Gestor de Ollama añade acciones separadas: actualizar el inventario privado,
 pedir una descarga y borrar un modelo; cada operación requiere pulsar su control.
 Estas acciones usan un almacén privado de Seiya (`ollama-models`) y un servidor
-temporal en 127.0.0.1:49401, que se cierra al terminar. La búsqueda del catálogo
+temporal en 127.0.0.1:49402, que se cierra al terminar. Consultar y descargar
+no requiere detener el chat en 49401; para borrar modelos se debe detener el motor.
+La búsqueda del catálogo
 oficial abre ollama.com en el navegador. El combo Cerebro se llena con el último
 inventario privado que el usuario pidió actualizar. Los modelos del servicio
 compartido no se adoptan ni se copian automáticamente.

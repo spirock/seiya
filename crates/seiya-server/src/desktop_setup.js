@@ -164,10 +164,23 @@
       if (!options.has(model.name)) options.set(model.name, new Option(model.name, model.name));
     }
     brains.replaceChildren(...options.values());
+    el('managerEmpty').hidden = value.models.length !== 0;
     el('managerProgress').textContent = value.models.length
-      ? value.models.length + ' modelo(s) local(es).'
-      : 'No hay modelos instalados.';
+      ? value.models.length + ' modelo(s) local(es). Selecciona uno para usarlo como Cerebro.'
+      : 'El almacén privado está vacío.';
   }
+  el('managerUse').addEventListener('click', () => {
+    const name = el('managerInstalled').value;
+    if (!name) { el('managerProgress').textContent = 'Consulta la lista y selecciona un modelo instalado.'; return; }
+    el('setupBrain').value = name; invalidate();
+    el('managerProgress').textContent = 'Cerebro seleccionado: ' + name + '. Revisa la configuración para continuar.';
+  });
+  el('managerSuggest').addEventListener('click', () => {
+    if (modelPull) return;
+    el('managerDownloads').open = true;
+    el('managerModelName').value = 'qwen2.5:1.5b';
+    el('managerPull').focus();
+  });
   el('managerRefresh').addEventListener('click', () => action(refreshInstalled));
   function formatModelSize(bytes) {
     if (!Number.isFinite(bytes) || bytes < 0) return 'tamaño desconocido';

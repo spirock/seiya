@@ -23,8 +23,8 @@ autodetección. No explorar discos, almacenes de modelos ni PATH arbitrario.
 El aviso y la ruta se presentan al abrir/revisar Configuración. La búsqueda de
 archivos se repite al obtener snapshot; no se afirma ausencia de instalación.
 
-El perfil Linux del gestor usa una instancia Ollama propia en 127.0.0.1:49401
-para inventario/descarga solo bajo acciones explícitas y para chat solo después de
+El perfil Linux usa un gestor temporal en 127.0.0.1:49402 para inventario y
+descargas explícitas, y otra instancia en 127.0.0.1:49401 para chat solo después de
 Confirmar e iniciar. Todos esos procesos usan el almacén privado de Seiya; no
 adoptan ni modifican el almacén ni detienen el servicio 11434. Su inventario de
 arranque tampoco ejecuta inferencia; el primer mensaje del usuario es el primer

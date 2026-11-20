@@ -8,6 +8,8 @@ use std::{
 };
 
 pub(crate) const OWNED_PORT: u16 = 49401;
+const MANAGER_PORT: u16 = 49402;
+static MANAGER_SLOT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 const OWNED_API: &str = "http://127.0.0.1:49401";
 const OWNED_ID: &str = "ollama-managed-brain";
 const OWNED_BASE: &str = "http://127.0.0.1:49401/v1";
@@ -45,7 +47,10 @@ fn configured_binary() -> Result<String, &'static str> {
 }
 
 /// Inicia solo el servidor de gestión privado; no carga ni genera con modelos.
-async fn launch_manager(binary: Option<&str>) -> Result<tokio::process::Child, &'static str> {
+async fn launch_server(
+    binary: Option<&str>,
+    port: u16,
+) -> Result<tokio::process::Child, &'static str> {
     if !supported() {
         return Err("model_manager_unsupported");
     }
@@ -68,23 +73,25 @@ async fn launch_manager(binary: Option<&str>) -> Result<tokio::process::Child, &
         }
     }
     let store = private_store().map_err(|_| "ollama_private_store_invalid")?;
-    if tokio::net::TcpListener::bind(("127.0.0.1", OWNED_PORT))
+    if tokio::net::TcpListener::bind(("127.0.0.1", port))
         .await
         .is_err()
     {
         return Err("ollama_owned_port_busy");
     }
-    spawn_owned(path, store).map_err(|_| "ollama_owned_start_failed")
+    spawn_owned(path, store, port).map_err(|_| "ollama_owned_start_failed")
 }
 
 fn spawn_owned(
     path: std::path::PathBuf,
     store: std::path::PathBuf,
+    port: u16,
 ) -> std::io::Result<tokio::process::Child> {
     let mut command = tokio::process::Command::new(path);
     command
         .arg("serve")
-        .env("OLLAMA_HOST", format!("127.0.0.1:{OWNED_PORT}"))
+        .env("OLLAMA_HOST", format!("127.0.0.1:{port}"))
+        .env("OLLAMA_NOPRUNE", "1")
         .env("OLLAMA_MODELS", store)
         .env("OLLAMA_NO_CLOUD", "1")
         .kill_on_drop(true)
@@ -101,7 +108,11 @@ async fn wait_for_tags() -> Result<reqwest::Response, &'static str> {
     let client = client()?;
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(12);
     loop {
-        match client.get(format!("{OWNED_API}/api/tags")).send().await {
+        match client
+            .get(format!("http://127.0.0.1:{MANAGER_PORT}/api/tags"))
+            .send()
+            .await
+        {
             Ok(response) if response.status().is_success() => return Ok(response),
             Ok(_) => return Err("ollama_api_error"),
             Err(_) if tokio::time::Instant::now() < deadline => {
@@ -235,7 +246,9 @@ pub(crate) async fn launch_owned(
     if !supported() || !valid_model_id(model) {
         return Err("model_manager_unsupported".into());
     }
-    let mut child = launch_manager(Some(binary)).await.map_err(str::to_owned)?;
+    let mut child = launch_server(Some(binary), OWNED_PORT)
+        .await
+        .map_err(str::to_owned)?;
     let runtime = RuntimeConfig {
         id: OWNED_ID.into(),
         model: model.into(),
@@ -376,7 +389,8 @@ pub(crate) async fn list() -> Result<serde_json::Value, &'static str> {
     {
         return Err("model_manager_busy");
     }
-    let child = launch_manager(None).await?;
+    let _slot = MANAGER_SLOT.try_lock().map_err(|_| "model_manager_busy")?;
+    let child = launch_server(None, MANAGER_PORT).await?;
     let result = async {
         let response = wait_for_tags().await?;
         let body = response
@@ -460,7 +474,8 @@ pub(crate) async fn pull(id: &str) -> Result<serde_json::Value, &'static str> {
 }
 
 async fn pull_private(id: &str) -> Result<(), &'static str> {
-    let child = launch_manager(None).await?;
+    let _slot = MANAGER_SLOT.try_lock().map_err(|_| "model_manager_busy")?;
+    let child = launch_server(None, MANAGER_PORT).await?;
     let result = async {
         let _ = wait_for_tags().await?;
         let client = reqwest::Client::builder()
@@ -470,7 +485,7 @@ async fn pull_private(id: &str) -> Result<(), &'static str> {
             .build()
             .map_err(|_| "ollama_client_unavailable")?;
         let mut response = client
-            .post(format!("{OWNED_API}/api/pull"))
+            .post(format!("http://127.0.0.1:{MANAGER_PORT}/api/pull"))
             .json(&serde_json::json!({"name": id, "stream": true}))
             .send()
             .await
@@ -591,11 +606,12 @@ pub(crate) async fn delete(id: &str) -> Result<(), &'static str> {
     {
         return Err("model_manager_busy");
     }
-    let child = launch_manager(None).await?;
+    let _slot = MANAGER_SLOT.try_lock().map_err(|_| "model_manager_busy")?;
+    let child = launch_server(None, MANAGER_PORT).await?;
     let result = async {
         let _ = wait_for_tags().await?;
         let response = client()?
-            .delete(format!("{OWNED_API}/api/delete"))
+            .delete(format!("http://127.0.0.1:{MANAGER_PORT}/api/delete"))
             .json(&serde_json::json!({"name": id}))
             .send()
             .await
@@ -626,6 +642,25 @@ pub(crate) fn remember_installed_for_test(id: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    #[ignore = "requires an explicitly started private chat and installed test model"]
+    async fn list_private_models_while_chat_is_listening() {
+        let model = std::env::var("SEIYA_TEST_INSTALLED_MODEL").unwrap();
+        let chat = || tokio::net::TcpStream::connect(("127.0.0.1", OWNED_PORT));
+        drop(chat().await.unwrap());
+        let inventory = list().await.unwrap();
+        assert!(inventory["models"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["name"] == model));
+        drop(chat().await.unwrap());
+        assert!(tokio::net::TcpListener::bind(("127.0.0.1", MANAGER_PORT))
+            .await
+            .is_ok());
+    }
 
     #[test]
     fn model_ids_are_constrained_to_safe_ollama_names() {
@@ -685,7 +720,7 @@ mod tests {
         permissions.set_mode(0o700);
         std::fs::set_permissions(&script, permissions).unwrap();
 
-        let child = spawn_owned(script, root.clone()).unwrap();
+        let child = spawn_owned(script, root.clone(), OWNED_PORT).unwrap();
         let pid = tokio::time::timeout(std::time::Duration::from_secs(3), async {
             loop {
                 if let Ok(value) = std::fs::read_to_string(&runner_pid) {

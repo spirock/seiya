@@ -44,6 +44,17 @@ antes de activar nuevas asignaciones. Instalado/habilitado no significa resident
 perfil conservador secuencial y paralelismo solo con mediciones que lo respalden.
 [Diseño de roles](docs/decisions/0062-modelos-por-roles.md).
 
+**Primer caso de paralelismo adaptativo:** mientras Qwen-Image dibuja, el
+Cerebro puede responder sobre otro tema si ambos motores admiten ejecución
+independiente y caben a la vez. Decidir por la RAM y la VRAM **disponibles**
+en ese momento y por los picos medidos para esos modelos, contexto, resolución
+y reparto CPU/GPU; no por una cifra fija de memoria instalada. Reservar margen
+para el sistema antes de admitir el segundo trabajo. Si falta margen o la
+medición es incierta, conservar la imagen en curso e indicar en el chat que
+la respuesta está en espera. Validar ambas rutas: una respuesta que termine
+mientras la imagen sigue generándose y la espera sin pérdida de mensajes
+cuando los recursos no alcancen.
+
 ## Planificado · versiones y actualizaciones
 
 Versión de producto y build identificables, manifiesto público con última versión
@@ -59,6 +70,22 @@ Backends de inferencia y modelos validados por plataforma, paridad de funciones
 pendientes y recuperación/actualización sin pérdida de datos. Firma/notarización,
 instalación y rollback en dispositivos reales antes de promocionar una release
 estable. No retirar el prototipo operativo hasta superar esas puertas.
+
+## Planificado · control asistido del equipo
+
+Explorar un modo opcional para que Seiya ayude a usar aplicaciones del sistema y
+el navegador: por ejemplo, abrir una terminal, escribir texto o interactuar con
+una página mediante Playwright. La visión puede permitir interpretar capturas de
+pantalla; para el navegador también se estudiará la información accesible de la
+página. La compatibilidad dependerá del modelo, el motor y el sistema operativo.
+
+Esta capacidad **no está implementada ni habilitada**. Antes de activarla se
+definirán permisos separados y revocables para pantalla, aplicaciones, terminal
+y navegador; confirmación explícita para acciones sensibles, incluyendo ejecución
+de comandos, envío de datos y cambios destructivos; una parada inmediata visible;
+y registro de acciones sin exponer secretos. El contenido de páginas y ventanas
+se tratará como no confiable, nunca como autorización. Las pruebas comenzarán en
+entornos aislados, con validación específica por plataforma.
 
 ## Criterios de avance
 

@@ -29,7 +29,9 @@ const seiyaSetupNavigation=(()=>{
  root.onclick=()=>expanded(menu.hidden);back.onclick=()=>{show('chat');root.focus();};
  for(const panel of [menu,setup,general,back])panel.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();show('chat');root.focus();}});
  for(const id of ['clear','newMobile'])get(id).addEventListener('click',()=>show('chat'));
- get('welcome').textContent='Abre Configuración → Configuración de modelos para revisar este equipo. Guardar no inicia modelos ni habilita por sí solo el chat.';
+ get('welcome').textContent='Prepara tu modelo para empezar a conversar.';
+ const first=document.createElement('button');first.type='button';first.textContent='Configurar mi modelo';first.onclick=()=>show('models');
+ get('welcome').append(first);
  show('chat');
  return {show};
 })();

@@ -18,5 +18,5 @@ back.onclick();assert.equal(surface.hidden,false);assert.equal(get('composer').h
 menu.children[0].onclick();setup.listeners.keydown({key:'Escape',preventDefault(){}});assert.equal(setup.hidden,true);
 menu.children[0].onclick();run('seiyaSetupSaved()');assert.equal(setup.hidden,true);assert.match(get('status').textContent,/guardada sin iniciar/);
 menu.children[0].onclick();get('clear').listeners.click();assert.equal(surface.hidden,false);
-assert.ok(fs.readFileSync('crates/seiya-server/src/desktop_setup.rs','utf8').includes('max-width:780px;margin:0 auto;'));
+get('welcome').children[0].onclick();assert.equal(setup.hidden,false);
 console.log('Initial settings: no popup, exclusive chat/settings surface, submenu, Escape/back/save and preserved draft (synthetic DOM).');

@@ -183,7 +183,7 @@ async fn page() -> Html<String> {
     let shell = source.split("<script>").next().unwrap();
     Html(format!(
         "{shell}{}<script>{}\n{}\n{}\n{}\nseiyaMountUpdate(location.href);</script></html>",
-        include_str!("desktop_setup.html").replace("position:fixed;inset:64px 16px 16px auto;width:min(780px,calc(100% - 32px));overflow:auto;", "max-width:780px;margin:0 auto;"),
+        include_str!("desktop_setup.html"),
         standalone_navigation_script(),
         include_str!("desktop_setup_feedback.js"),
         include_str!("desktop_setup_navigation.js"),
@@ -317,7 +317,13 @@ async fn pull_model(Json(v): Json<ModelName>) -> Response {
         Err(error) => failure(error),
     }
 }
-async fn delete_model(Json(v): Json<ModelName>) -> Response {
+async fn delete_model(State(s): State<Arc<Setup>>, Json(v): Json<ModelName>) -> Response {
+    let Ok(_permit) = s.operation.try_acquire() else {
+        return failure("operation_busy");
+    };
+    if s.control.lock().await.stop.is_some() {
+        return failure("stop_runtime_before_editing");
+    }
     match crate::local_models::manager::delete(&v.name).await {
         Ok(()) => Json(json!({"deleted":true})).into_response(),
         Err(error) => failure(error),
@@ -705,10 +711,9 @@ async fn run_at(
         tokio::select! { value=open(bootstrap)=>value, _=rx.changed()=>Err("cancelled".into()) };
     let mut server_ended = false;
     if opened.is_ok() && !*rx.borrow() {
-        tokio::select! {
-            _=rx.changed()=>{},
-            _=async { if port == 8015 { tokio::time::sleep(Duration::from_secs(1800)).await } else { std::future::pending::<()>().await } }=>{},
-            _=&mut server=>{server_ended=true; shutdown.send_replace(true);},
+        server_ended = wait_for_desktop_shutdown(&mut rx, &mut server).await;
+        if server_ended {
+            shutdown.send_replace(true);
         }
     }
     shutdown.send_replace(true);
@@ -739,6 +744,17 @@ async fn run_at(
         Ok(_) => Ok(()),
         Err(e) if e == "cancelled" => Ok(()),
         Err(e) => Err(e),
+    }
+}
+
+/// Espera el cierre explícito o el fin del servidor, sin plazo de sesión.
+async fn wait_for_desktop_shutdown(
+    shutdown: &mut watch::Receiver<bool>,
+    server: &mut tokio::task::JoinHandle<Result<(), std::io::Error>>,
+) -> bool {
+    tokio::select! {
+        _ = shutdown.changed() => false,
+        _ = server => true,
     }
 }
 async fn restore_saved_host(state: &Arc<Setup>) {

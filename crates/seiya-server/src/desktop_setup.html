@@ -1,21 +1,70 @@
-<section id="setup" role="region" aria-label="Configuración de Seiya" style="position:fixed;inset:64px 16px 16px auto;width:min(780px,calc(100% - 32px));overflow:auto;background:#212121;border:1px solid #484848;border-radius:16px;padding:24px;z-index:5">
-<h1>Bienvenido a Seiya</h1>
-<p>Configura este equipo desde aquí. Abrir la aplicación no carga ni descarga modelos.</p>
-<p id="setupPlatform"></p><p id="setupMessage" role="status" aria-live="polite"></p>
+<section id="setup" role="region" aria-label="Configuración de Seiya">
+<style>
+#setup{max-width:780px;margin:0 auto;padding:12px 0 32px;color:#efedf7;overflow-wrap:anywhere}
+#setup .setup-card,#setupApproval{background:#29282d;border:1px solid #49464f;border-radius:16px;padding:clamp(14px,3vw,24px);margin:14px 0}
+#setup .setup-intro{border-top:3px solid #b6a0ff}
+#setup h1,#setup h2,#setup h3,#setup h4{line-height:1.25;margin:0 0 .55em}
+#setup h2{font-size:1.25rem}#setup p{margin:.5em 0;color:#d0cdd7}
+#setup .setup-caption{color:#c4b5fd;font-size:.8rem;font-weight:650;letter-spacing:.05em}
+#setup button,#setup select{margin:4px 2px 4px 0;max-width:100%}
+#setup label{display:block;margin:.7em 0;font-weight:550}
+#setup input,#setup textarea,#setup select{background:#211f25;border:1px solid #615c69;border-radius:8px;padding:8px 12px}
+#setup input,#setup textarea{display:block;width:100%;margin-top:4px}
+#setup details{font-size:inherit}#setup summary{cursor:pointer;font-weight:600}
+#setup button:focus-visible,#setup summary:focus-visible,#setup input:focus-visible,#setup select:focus-visible{outline:2px solid #c4b5fd;outline-offset:2px}
+#setupReview,#setupStart,#setupEnter{background:#d1c4ff;color:#211a32;font-weight:650}
+#setup .setup-actions{border-top:1px solid #49464f;padding-top:12px}
+</style>
+<div class="setup-card setup-intro">
+<p class="setup-caption">SEIYA · CONFIGURACIÓN LOCAL</p>
+<h1>Tu espacio de modelos</h1>
+<p>Elige el modelo con el que quieres conversar. Solo se genera una respuesta cuando envías un mensaje.</p>
 <p id="setupEngineState" role="status"></p>
 <button id="setupResidency" type="button" hidden>Comprobar si el modelo está cargado</button>
 <span id="setupResidencyResult" role="status"></span>
-<button id="setupDetect" type="button">Detectar instalaciones y perfil</button>
+</div>
 <form id="setupForm">
-<h2>1 · Motor y almacén local</h2>
+<section id="ollamaManager" hidden aria-label="Gestor local de modelos" class="setup-card">
+<p class="setup-caption">BIBLIOTECA · OLLAMA EN LINUX</p>
+<h2>Modelos de este equipo</h2>
+<p>Consulta los modelos del almacén privado de Seiya. Los del servicio Ollama compartido no aparecen aquí.</p>
+<button id="managerRefresh" type="button">Consultar modelos instalados</button>
+<select id="managerInstalled" aria-label="Modelos instalados"><option value="">—</option></select>
+<button id="managerUse" type="button">Usar selección como Cerebro</button>
+<p id="managerProgress" role="status" aria-live="polite"></p>
+<div id="managerEmpty" hidden>
+<h3>Elige tu primer modelo</h3>
+<p>Para probar el chat, Qwen 2.5 de 1.5B necesita una descarga de aproximadamente 1 GB.</p>
+<button id="managerSuggest" type="button">Elegir Qwen 2.5 · 1.5B</button>
+</div>
+<details id="managerDownloads"><summary>Descargar un modelo</summary>
+<label>ID para descargar <input id="managerModelName" maxlength="200" autocomplete="off" placeholder="qwen2.5:1.5b"></label>
+<button id="managerPull" type="button">Descargar</button>
+<button id="managerCancel" type="button" disabled>Cancelar descarga</button>
+<label>Buscar otro modelo <input id="managerSearch" maxlength="120" autocomplete="off"></label>
+<a id="managerSearchLink" href="https://ollama.com/search" target="_blank" rel="noopener noreferrer">Buscar en Ollama</a>
+</details>
+<details><summary>Eliminar un modelo</summary>
+<p>Selecciona un modelo instalado. Se pedirá confirmación antes de borrar sus pesos.</p>
+<button id="managerDelete" type="button">Eliminar modelo seleccionado</button>
+</details>
+</section>
+<div class="setup-card">
+<p class="setup-caption">CONVERSACIÓN</p>
+<h2>Modelo del chat</h2>
+<label>Cerebro · escribe para buscar entre los modelos instalados <input id="setupBrain" list="setupBrains" maxlength="200" required></label>
+<datalist id="setupBrains"><option value="gemma4:e2b-mlx"></datalist>
+</div>
+<details class="setup-card"><summary>Opciones avanzadas · motores, rutas y roles</summary>
+<p id="setupPlatform"></p>
+<button id="setupDetect" type="button">Detectar instalaciones y perfil</button>
+<h3>Motor y almacén local</h3>
 <p>Se detectan rutas conocidas, sin ejecutar el motor. También puedes pegar una ruta absoluta o usar el selector. El gestor Linux usa siempre su almacén privado de Seiya; esta ruta guardada no selecciona el almacén de ese gestor.</p>
 <p>Fuentes de pesos: <a href="https://ollama.com/library/gemma4:e2b-mlx" target="_blank" rel="noopener noreferrer">Gemma E2B MLX</a> · <a href="https://ollama.com/library/qwen3.5:9b-mlx" target="_blank" rel="noopener noreferrer">Qwen 9B MLX</a> · <a href="https://huggingface.co/unsloth/Qwen-Image-2.1-Turbo-GGUF" target="_blank" rel="noopener noreferrer">Qwen-Image</a>. Descargar pesos no prepara el motor ni garantiza los hashes requeridos. Seiya no descarga nada al abrir estos controles.</p>
 <label>Ejecutable Ollama compatible <input id="setupLlm" autocomplete="off" maxlength="4096"></label><button type="button" data-pick="llm_binary">Buscar ejecutable</button><br>
 <label>Ruta de almacén guardada (no usada por el gestor privado) <input id="setupStore" autocomplete="off" maxlength="4096"></label><button type="button" data-pick="model_store">Buscar carpeta</button>
 <h2>2 · Gestor de modelos por roles</h2>
 <p>En Linux puedes actualizar la lista del almacén privado Ollama y escribir para buscar un modelo instalado. Sin catálogo, Seiya permite probar un solo modelo como Cerebro; trabajadores e imágenes requieren una configuración compatible distinta. Guardar no inicia el motor.</p>
-<label>Cerebro · escribe para buscar entre los modelos instalados <input id="setupBrain" list="setupBrains" maxlength="200" required></label>
-<datalist id="setupBrains"><option value="gemma4:e2b-mlx"></datalist><br>
 <label>Grupo de trabajadores (un ID por línea; vacío desactiva multiagente)
 <textarea id="setupWorkers" rows="3" maxlength="3216" placeholder="qwen3.5:9b-mlx"></textarea></label>
 <label>Pipeline de imágenes <input id="setupImage" list="setupImages" maxlength="200" placeholder="Vacío: sin imágenes"></label>
@@ -25,34 +74,23 @@
 <button id="setupProbe" type="button">Probar este modelo</button>
 <p>Consulta la lista del motor. No genera texto ni imágenes.</p>
 <p id="setupProbeResult" role="status"></p></fieldset>
-<section id="ollamaManager" hidden aria-label="Gestor local de modelos">
-<h3>Gestor de modelos Ollama · Linux</h3>
-<p>Usa el ejecutable Ollama configurado, pero mantiene los pesos en un almacén privado de Seiya. Actualizar lista inicia brevemente el servidor privado solo para leer inventario; Descargar y borrar son acciones explícitas y usan ese mismo almacén. No se conecta al Ollama compartido en 11434 ni inicia inferencia.</p>
-<label>Buscar modelo <input id="managerSearch" maxlength="120" autocomplete="off"></label>
-<a id="managerSearchLink" href="https://ollama.com/search" target="_blank" rel="noopener noreferrer">Buscar en Ollama</a>
-<label>ID para descargar (por ejemplo, gemma3:4b) <input id="managerModelName" maxlength="200" autocomplete="off"></label>
-<button id="managerPull" type="button">Descargar</button>
-<button id="managerCancel" type="button" disabled>Cancelar descarga</button>
-<p id="managerProgress" role="status" aria-live="polite"></p>
-<h4>Modelos instalados</h4>
-<button id="managerRefresh" type="button">Actualizar lista y opciones de Cerebro</button>
-<select id="managerInstalled" aria-label="Modelos instalados"><option value="">—</option></select>
-<button id="managerDelete" type="button">Eliminar modelo seleccionado</button>
-<p>La eliminación requiere confirmación. El listado no carga modelos ni realiza inferencia.</p>
-</section>
 <p><button id="setupSaveRoles" type="button">Guardar asignaciones en este navegador</button></p>
 <p><button id="setupRestoreRoles" type="button">Recuperar borrador de roles del navegador</button></p>
 <p>Este guardado conserva solo los IDs de los roles, sin rutas ni motores, y no los activa. Permite preparar el grupo también en Windows mientras falta su backend local.</p>
 <p>Adaptador actual macOS: cerebro Gemma E2B MLX; cero/un auxiliar Qwen 9B MLX; imágenes Qwen-Image Turbo Q4. Otros IDs/grupos se guardan como asignaciones, pero su ejecución está bloqueada. No se sustituyen silenciosamente.</p>
 <label>Ejecutable sd-cli verificado <input id="setupImageBinary" autocomplete="off" maxlength="4096"></label><button type="button" data-pick="image_binary">Buscar ejecutable</button><br>
 <label>Carpeta de los tres assets de imagen <input id="setupImageAssets" autocomplete="off" maxlength="4096"></label><button type="button" data-pick="image_assets">Buscar carpeta</button>
-<h2>3 · Revisión y confirmación</h2>
+</details>
+<div class="setup-card">
+<h2>Revisar y continuar</h2>
 <p>Revisar prepara solo carpetas privadas propias de Seiya y comprueba rutas. No instala motores, modifica permisos externos ni genera. Los tamaños en disco no garantizan RAM suficiente.</p>
 <button id="setupReview" type="submit">Revisar configuración</button>
+</div>
 </form>
+<p id="setupMessage" role="status" aria-live="polite"></p>
 <section id="setupApproval" hidden><h3>Revisa antes de guardar</h3><pre id="setupSummary" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
 <p id="setupEffects"></p><button id="setupSave" type="button">Confirmar y guardar sin iniciar</button>
 <button id="setupStart" type="button">Confirmar, guardar e iniciar</button></section>
-<p><button id="setupEnter" type="button" hidden>Abrir chat</button> <button id="setupStop" type="button">Detener motores</button> <button id="setupQuit" type="button">Cerrar Seiya</button></p>
+<p class="setup-actions"><button id="setupEnter" type="button" hidden>Abrir chat</button> <button id="setupStop" type="button">Detener motores</button> <button id="setupQuit" type="button" hidden>Cerrar Seiya</button></p>
 <p>Solo este equipo · sin fallback remoto. El chat y los modelos requieren configuración compatible. Esta interfaz no acredita inferencia Windows.</p>
 </section>

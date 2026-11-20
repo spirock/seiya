@@ -6,7 +6,7 @@
     "crates/seiya-server/src/diagnostics_ui.js": "e435306550d33fe76cfe26bdd75bdfc466382d73e86e5b258c277b828c5b6731",
     "crates/seiya-server/src/job_history_ui.js": "e38b8ac43703ffd3b51943c2f45f30cf5acfd9124b14a069cd66d0ea8a83edb5",
     "crates/seiya-server/src/image_jobs_ui.js": "7a27537920e804dc54e13c4a5f7cba665324e870975c113a4c422d26df53de3b",
-    "crates/seiya-server/src/desktop_setup.html": "76b43ae0bdd13fc72810929a0986ecf29ee67c021137c4b89ac756342e6538f0",
-    "crates/seiya-server/src/desktop_setup.js": "981f3a09fa00ce00eca3247a42bd352c4727bfcad5e50f8b6ab415e13bb764a9"
+    "crates/seiya-server/src/desktop_setup.html": "cd7d4e5ff89fd5ccce77ff3288d5a6e5136c0fec3c846154aa7ea8d76ffbef17",
+    "crates/seiya-server/src/desktop_setup.js": "7b265082f821f5bc44aa45da16fb4a96451fb702f68e8aa473f6d9af7b4cc587"
   }
 }
