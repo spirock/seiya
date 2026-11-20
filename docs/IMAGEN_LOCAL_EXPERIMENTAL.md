@@ -105,6 +105,13 @@ en este primer perfil; no garantía de calidad semántica o fidelidad al prompt.
 Logs del runtime pueden contener datos del prompt: permanecen privados, no se
 devuelven por API. Evidencia del host registra tamaño de prompt, no su texto.
 
+Si una generación se bloquea después de verificar los archivos y antes de
+arrancar el motor, `evidence.json` puede incluir `block_reason`. Es un código
+privado de permiso, inventario compartido no confirmado vacío, presupuesto de
+memoria, observación o margen de disco, o registro de intención nativa. No
+incluye el error bruto del sistema ni cambia `permission_or_resources` en la
+API. Un código ausente no confirma que esas comprobaciones pasaran.
+
 Rollback: no adjuntar ImageJobs; perfiles actuales permanecen sin imágenes. No
 instalación, publicación, borrado de pesos/evidencia/historial o cambio de proveedor.
 

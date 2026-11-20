@@ -184,6 +184,58 @@ fn record(root: &Path, name: &str, value: &Value) -> Result<(), Failure> {
     .map_err(|_| Failure::Failed)?;
     f.sync_all().map_err(|_| Failure::Failed)
 }
+
+// Only fixed private evidence codes. Never persist probe errors or request data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BlockReason {
+    PermissionRevoked,
+    SharedInventoryNotVerifiedEmpty,
+    MemoryBudget,
+    DiskObservationFailed,
+    DiskMargin,
+    NativeIntentUnavailable,
+}
+
+impl BlockReason {
+    fn code(self) -> &'static str {
+        match self {
+            Self::PermissionRevoked => "permission_revoked",
+            Self::SharedInventoryNotVerifiedEmpty => "shared_inventory_not_verified_empty",
+            Self::MemoryBudget => "memory_budget",
+            Self::DiskObservationFailed => "disk_observation_failed",
+            Self::DiskMargin => "disk_margin",
+            Self::NativeIntentUnavailable => "native_intent_unavailable",
+        }
+    }
+}
+
+fn blocked_at(report: &mut Value, reason: BlockReason) -> Failure {
+    report["block_reason"] = json!(reason.code());
+    Failure::Blocked
+}
+
+fn check_before_spawn(control: &Control, report: &mut Value) -> Result<(), Failure> {
+    control.check().map_err(|e| {
+        if e == Failure::Blocked {
+            blocked_at(report, BlockReason::PermissionRevoked)
+        } else {
+            e
+        }
+    })
+}
+
+fn check_spawn_resources(
+    memory_allowed: bool,
+    disk_free: impl FnOnce() -> Result<u64, String>,
+) -> Result<(), BlockReason> {
+    if !memory_allowed {
+        return Err(BlockReason::MemoryBudget);
+    }
+    if disk_free().map_err(|_| BlockReason::DiskObservationFailed)? < 4 * 1024u64.pow(3) {
+        return Err(BlockReason::DiskMargin);
+    }
+    Ok(())
+}
 fn verify_asset(path: &Path, asset: &Asset, control: &Control) -> Result<(), Failure> {
     let mut file = OpenOptions::new()
         .read(true)
@@ -445,17 +497,24 @@ pub async fn generate_with(
         cleanup: Value::Null,
         intent: None,
     };
-    let mut report = json!({"mode":"controlled-web-image-job","width":request.width,"height":request.height,"seed":request.seed,"prompt_bytes":request.prompt.len(),"model_inference_requested":false,"memory_stop_enabled":true,"samples":[],"error":null});
+    let mut report = json!({"mode":"controlled-web-image-job","width":request.width,"height":request.height,"seed":request.seed,"prompt_bytes":request.prompt.len(),"model_inference_requested":false,"memory_stop_enabled":true,"samples":[],"error":null,"block_reason":null});
     report["limits"] = json!({"swap_growth_mib":budget.max_swap_growth_mib,"deadline_seconds":budget.deadline_seconds,"warning_allowed":false,"critical_stop":true});
     let mut result=async{
-        control.check()?;runner::shared_empty().await.map_err(|_|Failure::Blocked)?;
-        if !control.memory_allowed(&native::memory(),prepared.baseline)||native::disk_free(&root).map_err(|_|Failure::Blocked)?<4*1024u64.pow(3){return Err(Failure::Blocked);}
+        check_before_spawn(&control, &mut report)?;
+        runner::shared_empty()
+            .await
+            .map_err(|_| blocked_at(&mut report, BlockReason::SharedInventoryNotVerifiedEmpty))?;
+        check_spawn_resources(control.memory_allowed(&native::memory(), prepared.baseline), || native::disk_free(&root))
+            .map_err(|reason| blocked_at(&mut report, reason))?;
         for name in ["home","tmp"]{fs::create_dir(root.join(name)).map_err(|_|Failure::Failed)?;}
         let profile=root.join("image.sb");fs::write(&profile,native::child_profile(&prepared.files.assets).map_err(|_|Failure::Failed)?).map_err(|_|Failure::Failed)?;
         let output=root.join("image.png");let log_path=root.join("runtime.log");let log=OpenOptions::new().write(true).create_new(true).mode(0o600).open(&log_path).map_err(|_|Failure::Failed)?;
         let mut command=Command::new("/usr/bin/sandbox-exec");command.arg("-f").arg(profile).args(runner::argv_for(&prepared.files.binary,&prepared.files.assets,&output,&request))
             .env_clear().env("PATH","/usr/bin:/bin:/usr/sbin:/sbin").env("LC_ALL","C").env("HOME",root.join("home")).env("TMPDIR",root.join("tmp")).current_dir(&root).stdin(Stdio::null()).stdout(log.try_clone().map_err(|_|Failure::Failed)?).stderr(log);
-        control.check()?;guard.intent=Some(guard.lease.as_ref().ok_or(Failure::Uncertain)?.begin_native("image").map_err(|_|Failure::Blocked)?);report["model_inference_requested"]=json!(true);guard.spawn_uncertain=true;guard.child=Some(OwnedChild::spawn(&mut command).map_err(|_|Failure::Uncertain)?);guard.spawn_uncertain=false;stage.send_replace(ImageStage::Running);
+        check_before_spawn(&control, &mut report)?;
+        guard.intent=Some(guard.lease.as_ref().ok_or(Failure::Uncertain)?.begin_native("image")
+            .map_err(|_| blocked_at(&mut report, BlockReason::NativeIntentUnavailable))?);
+        report["model_inference_requested"]=json!(true);guard.spawn_uncertain=true;guard.child=Some(OwnedChild::spawn(&mut command).map_err(|_|Failure::Uncertain)?);guard.spawn_uncertain=false;stage.send_replace(ImageStage::Running);
         let mut cancel=cancel.clone();
         loop{
             control.check()?;let c=guard.child.as_mut().ok_or(Failure::Uncertain)?;c.refresh().map_err(|_|Failure::Uncertain)?;
@@ -485,6 +544,34 @@ pub async fn generate_with(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spawn_resource_blocks_are_distinct_and_redact_probe_errors() {
+        let margin = 4 * 1024u64.pow(3);
+        assert_eq!(check_spawn_resources(true, || Ok(margin)), Ok(()));
+        for (result, code) in [
+            (
+                check_spawn_resources(false, || panic!("disk not probed after memory denial")),
+                "memory_budget",
+            ),
+            (
+                check_spawn_resources(true, || Err("private probe details".into())),
+                "disk_observation_failed",
+            ),
+            (
+                check_spawn_resources(true, || Ok(margin - 1)),
+                "disk_margin",
+            ),
+        ] {
+            let mut evidence = json!({"block_reason": null});
+            assert_eq!(
+                blocked_at(&mut evidence, result.unwrap_err()),
+                Failure::Blocked
+            );
+            assert_eq!(evidence, json!({"block_reason": code}));
+        }
+    }
+
     #[test]
     fn operator_budget_can_only_reduce_guard_and_is_a_turn_snapshot() {
         assert!(Budget {
