@@ -89,7 +89,22 @@ pub(crate) fn submit(
     Ok(reply(&job))
 }
 fn reply(job: &Value) -> Value {
-    json!({"model":"pegassus","choices":[{"index":0,"message":{"role":"assistant","content":"Solicitud de imagen registrada. Consulta el panel de imágenes para ver progreso, cancelación y el PNG validado; este mensaje no confirma que haya terminado."},"finish_reason":"stop"}],"usage":null,"image_job":job,"swarm":{"status_rendered_by_host":true,"elapsed_seconds":0}})
+    json!({"model":"pegassus","choices":[{"index":0,"message":{"role":"assistant","content":"Solicitud de imagen registrada. Aquí verás su progreso y, cuando esté lista, la imagen."},"finish_reason":"stop"}],"usage":null,"image_job":job,"swarm":{"status_rendered_by_host":true,"elapsed_seconds":0}})
+}
+#[cfg(test)]
+mod confirmation_tests {
+    use super::*;
+
+    #[test]
+    fn registration_points_to_chat_without_claiming_completion() {
+        let job = json!({"phase":"queued","artifact_available":false});
+        let response = reply(&job);
+        assert_eq!(response["image_job"], job);
+        assert_eq!(
+            response["choices"][0]["message"]["content"],
+            "Solicitud de imagen registrada. Aquí verás su progreso y, cuando esté lista, la imagen."
+        );
+    }
 }
 #[cfg(all(test, target_os = "macos"))]
 mod tests;

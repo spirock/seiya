@@ -1,6 +1,13 @@
 // Chat-only presentation of observed broker jobs. The frozen image controls
 // remain the sole owner of cancellation, PNG retrieval and idempotency.
 const seiyaPanelImageRender=seiyaRenderImages;
+const seiyaImageStyle=document.createElement('style');
+seiyaImageStyle.textContent=`
+.seiya-image-spinner {display:inline-block;width:1em;height:1em;margin-inline-end:.5em;vertical-align:-.15em;border:.15em solid currentColor;border-inline-end-color:transparent;border-radius:50%;box-sizing:border-box}
+@keyframes seiya-image-turn {to {transform:rotate(1turn)}}
+@media (prefers-reduced-motion:no-preference) {.seiya-image-spinner {animation:seiya-image-turn 1s linear infinite}}
+`;
+document.head.append(seiyaImageStyle);
 const seiyaChatImageStages={queued:'Imagen en cola…',preparing:'Preparando imagen…',running:'Generando imagen…',validating:'Validando imagen…',cancelling:'Cancelando imagen…'};
 seiyaRenderImages=function(data,chatId,session){
  seiyaPanelImageRender(data,chatId,session);
@@ -28,13 +35,11 @@ seiyaRenderImages=function(data,chatId,session){
   const target=messages[index];
   const status=row.querySelector('p');
   if(status)status.textContent=seiyaChatImageStages[job.phase]||seiyaImageLabels[job.phase];
-  const active=['queued','preparing','running','validating','cancelling'].includes(job.phase);
-  if(active){
-   const bar=document.createElement('progress');
-   bar.setAttribute('aria-label',job.phase==='running'?'Generando imagen':'Preparando imagen');
-   bar.style.width='100%';
-   // No value: the native broker reports progress_percent=null.
-   row.insertBefore(bar,status?.nextSibling||row.firstChild);
+  if(status&&job.phase==='running'){
+   const wheel=document.createElement('span');
+   wheel.className='seiya-image-spinner';
+   wheel.setAttribute('aria-hidden','true');
+   status.insertBefore(wheel,status.firstChild);
   }
   const id=document.createElement('small');
   id.textContent='ID de imagen: '+job.job_id;
