@@ -224,10 +224,9 @@ async fn residency(State(s): State<Arc<Setup>>) -> Json<Value> {
     {
         let c = s.control.lock().await;
         if c.phase != "running"
-            || !c
-                .residency
+            || c.residency
                 .as_ref()
-                .is_some_and(|probe| probe.try_send(tx).is_ok())
+                .is_none_or(|probe| probe.try_send(tx).is_err())
         {
             return Json(json!({"loaded":null}));
         }

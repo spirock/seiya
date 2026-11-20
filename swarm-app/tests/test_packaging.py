@@ -58,9 +58,12 @@ class PackagingTests(unittest.TestCase):
             with tarfile.open(fileobj=io.BytesIO(members['data.tar.gz']), mode='r:gz') as archive:
                 self.assertEqual(archive.getmember('./usr/bin/seiya').mode, 0o755)
                 for item in archive:
-                    self.assertTrue(item.isfile())
                     path = tmp / item.name
                     self.assertTrue(path.resolve().is_relative_to(tmp.resolve()))
+                    if item.isdir():
+                        path.mkdir(parents=True, exist_ok=True)
+                        continue
+                    self.assertTrue(item.isfile())
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_bytes(archive.extractfile(item).read())
             package = tmp / 'usr/lib/seiya'

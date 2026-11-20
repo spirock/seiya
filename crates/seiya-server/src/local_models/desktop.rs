@@ -254,7 +254,7 @@ impl Adapter for Desktop {
             Err(e)
                 if e == "local_catalog_required"
                     && !draft.roles.brain.is_empty()
-                    && (draft.roles.workers.len() > 0 || !draft.roles.image.is_empty()) =>
+                    && (!draft.roles.workers.is_empty() || !draft.roles.image.is_empty()) =>
             {
                 return Err("ollama_managed_roles_unsupported".into());
             }
