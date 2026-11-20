@@ -92,16 +92,7 @@ fn spawn_owned(
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
     #[cfg(unix)]
-    unsafe {
-        use std::os::unix::process::CommandExt;
-        command.as_std_mut().pre_exec(|| {
-            if libc::setpgid(0, 0) == 0 {
-                Ok(())
-            } else {
-                Err(std::io::Error::last_os_error())
-            }
-        });
-    }
+    command.process_group(0);
     command.spawn()
 }
 
@@ -330,6 +321,46 @@ fn client() -> Result<reqwest::Client, &'static str> {
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|_| "ollama_client_unavailable")
+}
+
+/// Lee los modelos residentes del servidor privado; no carga ni descarga pesos.
+pub(super) async fn model_loaded(model: &str) -> Option<bool> {
+    #[derive(Deserialize)]
+    struct Running {
+        models: Vec<Resident>,
+    }
+    #[derive(Deserialize)]
+    struct Resident {
+        name: String,
+    }
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .ok()?;
+    let mut response = client
+        .get(format!("{OWNED_API}/api/ps"))
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.ok()? {
+        if chunk.len() > 65536 - body.len() {
+            return None;
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let running: Running = serde_json::from_slice(&body).ok()?;
+    Some(
+        running
+            .models
+            .iter()
+            .any(|r| r.name == model || r.name.strip_suffix(":latest") == Some(model)),
+    )
 }
 
 /// Consulta el almacén privado mediante un servidor temporal sin inferencia.

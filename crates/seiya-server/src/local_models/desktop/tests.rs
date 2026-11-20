@@ -34,6 +34,11 @@ async fn inventory_uses_registered_binding_and_only_reads_models() {
     );
     server.abort();
     let _ = server.await;
+    // Reserva un puerto sin listen: otro test no puede reutilizarlo durante la comprobación.
+    let offline = tokio::net::TcpSocket::new_v4().unwrap();
+    offline.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    catalog.models[0].runtime.base_url = format!("http://{}/v1", offline.local_addr().unwrap());
+    std::fs::write(&adapter.catalog_path, serde_json::to_vec(&catalog).unwrap()).unwrap();
     assert_eq!(
         adapter.inventory("brain-small".into()).await.unwrap(),
         "unreachable"

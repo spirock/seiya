@@ -350,6 +350,7 @@ impl Adapter for Fake {
                 Ok(())
             });
             Ok(Engine {
+                residency: None,
                 router: Router::new()
                     .route("/session/fake", get(|| async { "runtime-auth-boundary" })),
                 bootstrap: "http://127.0.0.1:8015/session/fake".into(),

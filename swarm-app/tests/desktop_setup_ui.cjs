@@ -43,7 +43,8 @@ async function fixture(available=true, stored=new Map(), initialPhase='unconfigu
     const name=url.pathname.split('/').at(-1), body=options.body?JSON.parse(options.body):null; calls.push({name,body});
     let value={};
     if(name==='detect')value={draft,baseline:[],warning:null};
-    else if(name==='status')value={platform:available?'macos':'windows',runtime_available:available,inventory_supported:available,phase,error:null,restored_host:restored};
+    else if(name==='status')value={platform:available?'macos':'windows',runtime_available:available,inventory_supported:available,phase,error:null,restored_host:restored,residency_supported:ctx.residencySupported===true};
+    else if(name==='residency')value={loaded:ctx.resident};
     else if(name==='inventory')value={state:body.id==='brain-small'?'advertised':'absent',inference_tested:false};
     else if(name==='review')value={approval:'one-use',draft:body.draft,executable:available&&body.draft.roles.brain==='gemma4:e2b-mlx',effects:'filesystem only'};
     else if(name==='confirm'){if(hold)await new Promise(r=>release=r);if(lost){lost=false;throw Error('response lost')}value={saved:true};phase=body.start?'starting':'saved';}
@@ -81,7 +82,16 @@ async function fixture(available=true, stored=new Map(), initialPhase='unconfigu
    const delayed=await fixture();
    delayed.phase('running');await delayed.ctx.poll();await tick();
    assert.equal(delayed.calls.filter(c=>c.name==='enter').length,0,'newly started host must not auto-enter after initial setup');
+   assert.equal(delayed.get('setupResidency').hidden,true);
+   delayed.ctx.residencySupported=true;await delayed.ctx.poll();
+   assert.equal(delayed.get('setupResidency').hidden,false);
+   assert.ok(!delayed.calls.some(c=>c.name==='residency'));
+   for(const [observed,label] of [[false,/fuera de memoria/],[true,/cargado en memoria/],[null,/No se pudo confirmar/]]){
+     delayed.ctx.resident=observed;await delayed.get('setupResidency').click();
+     assert.match(delayed.get('setupResidencyResult').textContent,label);
+   }
    await delayed.get('setupStop').click();await delayed.ctx.poll();
+   assert.equal(delayed.get('setupResidencyResult').textContent,'');
    assert.match(delayed.get('setupMessage').textContent,/esperando confirmación/);
    delayed.phase('saved');await delayed.ctx.poll();
    assert.match(delayed.get('setupMessage').textContent,/Motores detenidos/);

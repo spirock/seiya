@@ -264,7 +264,7 @@ impl Adapter for Desktop {
             Err(e) => return Err(e),
         };
         storage::ensure_directory(&self.root)?;
-        let _lock = storage::lock(&self.root.join("local-model-config.lock"))?;
+        let _lock = storage::config_lock(&self.root)?;
         if self.baseline()? != baseline {
             return Err("profile_changed_no_overwrite".into());
         }
@@ -276,7 +276,7 @@ impl Adapter for Desktop {
     }
     fn save(&self, approval: &Approval) -> Result<(), String> {
         storage::ensure_directory(&self.root)?;
-        let _lock = storage::lock(&self.root.join("local-model-config.lock"))?;
+        let _lock = storage::config_lock(&self.root)?;
         if self.baseline()? != approval.baseline {
             return Err("profile_changed_no_overwrite".into());
         }
@@ -392,7 +392,7 @@ impl Adapter for Desktop {
             let (router, bootstrap) = crate::pair_trial::access::app(address, state.clone())
                 .map_err(|e| e.to_string())?;
             let home = state.local_browser_home(address);
-            let owned_ollama = if let Some(model) = managed_model {
+            let mut owned_ollama = if let Some(model) = managed_model.as_deref() {
                 let saved = storage::read(&self.roles_path())?.ok_or("local_roles_required")?;
                 let saved: Saved =
                     serde_json::from_slice(&saved).map_err(|_| "local_roles_invalid_schema")?;
@@ -400,7 +400,7 @@ impl Adapter for Desktop {
                     return Err("local_roles_invalid_schema".into());
                 }
                 tokio::select! {
-                    result = super::manager::launch_owned(&saved.ollama_binary, &model) => {
+                    result = super::manager::launch_owned(&saved.ollama_binary, model) => {
                         Some(result?)
                     },
                     _ = stop.changed() => return Err("startup_cancelled".into()),
@@ -408,8 +408,26 @@ impl Adapter for Desktop {
             } else {
                 None
             };
+            let (probe, mut requests) =
+                tokio::sync::mpsc::channel::<tokio::sync::oneshot::Sender<Option<bool>>>(1);
+            let residency = managed_model.as_ref().map(|_| probe.clone());
+            drop(probe);
             let done = tokio::spawn(async move {
-                if !*stop.borrow() {
+                if let (Some(child), Some(model)) = (&mut owned_ollama, managed_model) {
+                    while !*stop.borrow() {
+                        tokio::select! {
+                            biased;
+                            _ = stop.changed() => break,
+                            req = requests.recv() => {
+                                let Some(reply) = req else { break };
+                                let loaded = if matches!(child.try_wait(), Ok(None)) {
+                                    super::manager::model_loaded(&model).await
+                                } else { None };
+                                let _ = reply.send(loaded);
+                            }
+                        }
+                    }
+                } else if !*stop.borrow() {
                     let _ = stop.changed().await;
                 }
                 pool.stop();
@@ -428,6 +446,7 @@ impl Adapter for Desktop {
                 }
             });
             Ok(Engine {
+                residency,
                 router,
                 bootstrap,
                 home,

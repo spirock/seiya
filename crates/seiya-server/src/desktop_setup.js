@@ -136,6 +136,14 @@
     }
   }));
   let awaitingStop = false;
+  el('setupResidency').addEventListener('click', () => action(async () => {
+    const out = el('setupResidencyResult');
+    out.textContent = 'Consultando el motor…';
+    try {
+      const {loaded} = await api('residency', {});
+      if (!el('setupResidency').hidden) out.textContent = loaded === true ? 'Última consulta: modelo cargado en memoria.' : loaded === false ? 'Última consulta: modelo fuera de memoria.' : 'No se pudo confirmar si el modelo está cargado.';
+    } catch (_) { out.textContent = 'Estado del modelo no disponible.'; }
+  }));
   el('setupStop').addEventListener('click', () => action(async () => { await api('stop', {}); invalidate(); awaitingStop = true; message('Parada solicitada; esperando confirmación de cierre.'); }));
   el('setupQuit').addEventListener('click', () => action(async () => { await api('quit', {}); message('Cerrando Seiya. Puedes cerrar esta pestaña.'); }));
   let modelPull = false;
@@ -228,6 +236,11 @@
     polling = true;
     try {
       const v = await api('status');
+      const phases = {unconfigured:'Sin configurar',saved:'Detenido',starting:'Arrancando',running:'En marcha',stopping:'Deteniéndose',blocked:'Bloqueado; cierre no confirmado'};
+      const label = 'Motor de Seiya: ' + (phases[v.phase] || 'Estado desconocido') + '.';
+      if (el('setupEngineState').textContent !== label) el('setupEngineState').textContent = label;
+      el('setupResidency').hidden = v.phase !== 'running' || v.residency_supported !== true;
+      if (el('setupResidency').hidden) el('setupResidencyResult').textContent = '';
       el('setupInventory').hidden = v.inventory_supported !== true;
       el('ollamaManager').hidden = v.model_manager_supported !== true;
       el('setupPlatform').textContent = 'Equipo: ' + v.platform + ' / ' + (v.architecture || 'arquitectura no informada') + (v.inventory_supported ? ' · catálogo HTTP local' : v.runtime_available ? ' · adaptador disponible' : ' · sin adaptador de ejecución');
@@ -238,7 +251,11 @@
         if (v.phase !== 'blocked' && !v.error) message('Motores detenidos. Ya puedes revisar la configuración.');
       }
       if (v.error) message(explain(v.error));
-    } catch (_) { message('Seiya no está disponible o la sesión caducó. Abre la aplicación de nuevo; no se reenvían acciones.'); }
+    } catch (_) {
+      el('setupEngineState').textContent = 'Motor de Seiya: estado desconocido.';
+      el('setupResidency').hidden = true; el('setupResidencyResult').textContent = '';
+      message('Seiya no está disponible o la sesión caducó. Abre la aplicación de nuevo; no se reenvían acciones.');
+    }
     finally { polling = false; }
   }
   action(detect); refresh(); setInterval(refresh, 1500);

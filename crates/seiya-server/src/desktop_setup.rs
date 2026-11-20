@@ -79,7 +79,10 @@ pub(crate) struct Approval {
     pub draft: Draft,
     pub baseline: Vec<u8>,
 }
+pub(crate) type ResidencyProbe =
+    tokio::sync::mpsc::Sender<tokio::sync::oneshot::Sender<Option<bool>>>;
 pub(crate) struct Engine {
+    pub residency: Option<ResidencyProbe>,
     pub router: Router,
     pub bootstrap: String,
     pub home: String,
@@ -128,6 +131,7 @@ struct Reviewed {
     approval: Approval,
 }
 struct Control {
+    residency: Option<ResidencyProbe>,
     phase: &'static str,
     error: Option<String>,
     reviewed: Option<Reviewed>,
@@ -152,6 +156,7 @@ impl Setup {
             home: std::sync::OnceLock::new(),
             adapter,
             control: Mutex::new(Control {
+                residency: None,
                 phase: "unconfigured",
                 error: None,
                 reviewed: None,
@@ -210,9 +215,29 @@ async fn status(State(s): State<Arc<Setup>>) -> Json<Value> {
     let c = s.control.lock().await;
     Json(
         json!({"platform":crate::platform::current().os.name(),"architecture":crate::platform::current().architecture,"runtime_available":s.adapter.available(),
-        "phase":c.phase,"error":c.error,"chat":c.chat,"restored_host":c.restored,
+        "phase":c.phase,"error":c.error,"chat":c.chat,"restored_host":c.restored,"residency_supported":c.phase=="running" && c.residency.is_some(),
         "inventory_supported":s.adapter.inventory_supported(),"model_manager_supported":crate::local_models::manager::supported(),"automatic_inference_requested":false,"inference_tested":false}),
     )
+}
+async fn residency(State(s): State<Arc<Setup>>) -> Json<Value> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    {
+        let c = s.control.lock().await;
+        if c.phase != "running"
+            || !c
+                .residency
+                .as_ref()
+                .is_some_and(|probe| probe.try_send(tx).is_ok())
+        {
+            return Json(json!({"loaded":null}));
+        }
+    }
+    let loaded = tokio::time::timeout(Duration::from_secs(3), rx)
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .flatten();
+    Json(json!({"loaded":loaded}))
 }
 async fn detect(State(s): State<Arc<Setup>>) -> Response {
     match s.adapter.snapshot() {
@@ -451,6 +476,7 @@ fn start_host(
                     c.phase = "stopping";
                 } else {
                     c.phase = "running";
+                    c.residency = engine.residency;
                     c.chat = Some(engine.home);
                     c.bootstrap = Some(engine.bootstrap);
                 }
@@ -463,6 +489,7 @@ fn start_host(
                 *s.mounted.write().unwrap() = Router::new();
                 let mut c = s.control.lock().await;
                 c.chat = None;
+                c.residency = None;
                 c.bootstrap = None;
                 c.phase = if result.is_ok() { "saved" } else { "blocked" };
                 c.error = result.err();
@@ -563,6 +590,7 @@ fn application_at_with_key(
     let inner = Router::new()
         .route("/", page_route)
         .route("/api/status", get(status))
+        .route("/api/residency", post(residency))
         .route("/api/detect", get(detect))
         .route("/api/update-check", post(check_update))
         .route("/api/inventory", post(inventory))

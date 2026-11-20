@@ -1232,6 +1232,7 @@ async fn page(State(state): State<Arc<PreparedWeb>>) -> Response {
     let html = html.replace("fetch('/", &format!("fetch('{prefix}/"));
     let html = if state.portable_models {
         html.replace("Coordinador: integración preparada, no activada","Coordinador: backend local configurable")
+            .replace("Preparando respuesta (sin streaming)…","Esperando respuesta del modelo local (sin streaming)…")
             .replace("Integración preparada, no activada con el par real. Imágenes web no disponibles.","Backend HTTP local configurado; sin inferencia de validación automática. Imágenes portables no disponibles.")
             .replace("Conversación real · Qwen e imágenes desactivados","Conversación local · modelo configurado")
     } else {

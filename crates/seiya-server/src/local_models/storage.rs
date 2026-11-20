@@ -140,6 +140,31 @@ pub(crate) fn lock(path: &Path) -> Result<File, String> {
     regular(&file, path)?;
     Ok(file)
 }
+/// Una revisión o escritura termina aquí incluso si un fork conserva una copia del descriptor.
+pub(super) struct ConfigLock(File);
+impl Drop for ConfigLock {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
+pub(super) fn config_lock(directory: &Path) -> Result<ConfigLock, String> {
+    lock(&directory.join("local-model-config.lock")).map(ConfigLock)
+}
+#[cfg(all(test, unix))]
+#[test]
+fn config_lock_releases_with_an_inherited_descriptor() {
+    let root = std::env::temp_dir()
+        .canonicalize()
+        .unwrap()
+        .join(uuid::Uuid::new_v4().to_string());
+    ensure_directory(&root).unwrap();
+    let guard = config_lock(&root).unwrap();
+    let _inherited = guard.0.try_clone().unwrap();
+    assert!(config_lock(&root).is_err());
+    drop(guard);
+    drop(config_lock(&root).unwrap());
+    std::fs::remove_dir_all(root).unwrap();
+}
 pub(crate) fn sync_directory(path: &Path) -> Result<(), String> {
     #[cfg(unix)]
     {

@@ -311,6 +311,7 @@ impl Adapter for WebAdapter {
                         result
                     });
                     Ok(Engine {
+                        residency: None,
                         router,
                         bootstrap: links.bootstrap,
                         home: links.home,
