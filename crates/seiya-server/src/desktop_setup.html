@@ -5,18 +5,38 @@
 <button id="setupDetect" type="button">Detectar instalaciones y perfil</button>
 <form id="setupForm">
 <h2>1 · Motor y almacén local</h2>
-<p>Se detectan rutas conocidas, sin ejecutar el motor. También puedes pegar una ruta absoluta o usar el selector.</p>
+<p>Se detectan rutas conocidas, sin ejecutar el motor. También puedes pegar una ruta absoluta o usar el selector. El gestor Linux usa siempre su almacén privado de Seiya; esta ruta guardada no selecciona el almacén de ese gestor.</p>
 <p>Fuentes de pesos: <a href="https://ollama.com/library/gemma4:e2b-mlx" target="_blank" rel="noopener noreferrer">Gemma E2B MLX</a> · <a href="https://ollama.com/library/qwen3.5:9b-mlx" target="_blank" rel="noopener noreferrer">Qwen 9B MLX</a> · <a href="https://huggingface.co/unsloth/Qwen-Image-2.1-Turbo-GGUF" target="_blank" rel="noopener noreferrer">Qwen-Image</a>. Descargar pesos no prepara el motor ni garantiza los hashes requeridos. Seiya no descarga nada al abrir estos controles.</p>
 <label>Ejecutable Ollama compatible <input id="setupLlm" autocomplete="off" maxlength="4096"></label><button type="button" data-pick="llm_binary">Buscar ejecutable</button><br>
-<label>Almacén de modelos (blobs y manifests-v2) <input id="setupStore" autocomplete="off" maxlength="4096"></label><button type="button" data-pick="model_store">Buscar carpeta</button>
+<label>Ruta de almacén guardada (no usada por el gestor privado) <input id="setupStore" autocomplete="off" maxlength="4096"></label><button type="button" data-pick="model_store">Buscar carpeta</button>
 <h2>2 · Gestor de modelos por roles</h2>
-<p>Las asignaciones se guardan y pueden sustituirse. Solo se activan variantes admitidas por el adaptador. Varios trabajadores no significa cargarlos simultáneamente.</p>
-<label>Cerebro <input id="setupBrain" list="setupBrains" maxlength="200" required></label>
+<p>En Linux puedes actualizar la lista del almacén privado Ollama y escribir para buscar un modelo instalado. Sin catálogo, Seiya permite probar un solo modelo como Cerebro; trabajadores e imágenes requieren una configuración compatible distinta. Guardar no inicia el motor.</p>
+<label>Cerebro · escribe para buscar entre los modelos instalados <input id="setupBrain" list="setupBrains" maxlength="200" required></label>
 <datalist id="setupBrains"><option value="gemma4:e2b-mlx"></datalist><br>
 <label>Grupo de trabajadores (un ID por línea; vacío desactiva multiagente)
 <textarea id="setupWorkers" rows="3" maxlength="3216" placeholder="qwen3.5:9b-mlx"></textarea></label>
 <label>Pipeline de imágenes <input id="setupImage" list="setupImages" maxlength="200" placeholder="Vacío: sin imágenes"></label>
 <datalist id="setupImages"><option value="qwen-image-2.1-turbo-q4"></datalist>
+<fieldset id="setupInventory" hidden><legend>Comprobar motor local</legend>
+<label>ID del catálogo <input id="setupProbeId" maxlength="200" placeholder="Vacío: usar el cerebro seleccionado"></label>
+<button id="setupProbe" type="button">Probar este modelo</button>
+<p>Consulta la lista del motor. No genera texto ni imágenes.</p>
+<p id="setupProbeResult" role="status"></p></fieldset>
+<section id="ollamaManager" hidden aria-label="Gestor local de modelos">
+<h3>Gestor de modelos Ollama · Linux</h3>
+<p>Usa el ejecutable Ollama configurado, pero mantiene los pesos en un almacén privado de Seiya. Actualizar lista inicia brevemente el servidor privado solo para leer inventario; Descargar y borrar son acciones explícitas y usan ese mismo almacén. No se conecta al Ollama compartido en 11434 ni inicia inferencia.</p>
+<label>Buscar modelo <input id="managerSearch" maxlength="120" autocomplete="off"></label>
+<a id="managerSearchLink" href="https://ollama.com/search" target="_blank" rel="noopener noreferrer">Buscar en Ollama</a>
+<label>ID para descargar (por ejemplo, gemma3:4b) <input id="managerModelName" maxlength="200" autocomplete="off"></label>
+<button id="managerPull" type="button">Descargar</button>
+<button id="managerCancel" type="button" disabled>Cancelar descarga</button>
+<p id="managerProgress" role="status" aria-live="polite"></p>
+<h4>Modelos instalados</h4>
+<button id="managerRefresh" type="button">Actualizar lista y opciones de Cerebro</button>
+<select id="managerInstalled" aria-label="Modelos instalados"><option value="">—</option></select>
+<button id="managerDelete" type="button">Eliminar modelo seleccionado</button>
+<p>La eliminación requiere confirmación. El listado no carga modelos ni realiza inferencia.</p>
+</section>
 <p><button id="setupSaveRoles" type="button">Guardar asignaciones en este navegador</button></p>
 <p><button id="setupRestoreRoles" type="button">Recuperar borrador de roles del navegador</button></p>
 <p>Este guardado conserva solo los IDs de los roles, sin rutas ni motores, y no los activa. Permite preparar el grupo también en Windows mientras falta su backend local.</p>

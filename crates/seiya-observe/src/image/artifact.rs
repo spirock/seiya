@@ -13,42 +13,22 @@ pub struct DecodedImage {
     pub nonuniform: bool,
 }
 
-/// Native zlib is an OS adapter, not Python or an additional installed runtime.
-/// Input/output buffers and consumed byte counts are bounded on both sides.
-#[cfg(target_os = "macos")]
+/// Descomprime un único flujo zlib dentro del presupuesto validado del PNG.
 fn inflate(input: &[u8], expected: usize) -> Result<Vec<u8>, &'static str> {
-    use std::ffi::{c_int, c_ulong};
-    #[link(name = "z")]
-    extern "C" {
-        fn uncompress2(
-            dest: *mut u8,
-            dest_len: *mut c_ulong,
-            source: *const u8,
-            source_len: *mut c_ulong,
-        ) -> c_int;
-    }
+    use flate2::{Decompress, FlushDecompress, Status};
+    let mut decoder = Decompress::new(true);
     let mut output = vec![0; expected + 1];
-    let mut output_len = output.len() as c_ulong;
-    let mut input_len = input.len() as c_ulong;
-    // SAFETY: exact writable/readable buffers with declared lengths; zlib never
-    // owns pointers. Reject errors, oversized output and trailing compressed input.
-    let result = unsafe {
-        uncompress2(
-            output.as_mut_ptr(),
-            &mut output_len,
-            input.as_ptr(),
-            &mut input_len,
-        )
-    };
-    if result != 0 || output_len as usize != expected || input_len as usize != input.len() {
+    let result = decoder
+        .decompress(input, &mut output, FlushDecompress::Finish)
+        .map_err(|_| "png_zlib_size_or_stream")?;
+    if result != Status::StreamEnd
+        || decoder.total_out() != expected as u64
+        || decoder.total_in() != input.len() as u64
+    {
         return Err("png_zlib_size_or_stream");
     }
     output.truncate(expected);
     Ok(output)
-}
-#[cfg(not(target_os = "macos"))]
-fn inflate(_: &[u8], _: usize) -> Result<Vec<u8>, &'static str> {
-    Err("native_png_decoder_unsupported")
 }
 
 pub fn decode(raw: &[u8], width: u32, height: u32) -> Result<DecodedImage, &'static str> {
@@ -136,20 +116,10 @@ pub fn decode(raw: &[u8], width: u32, height: u32) -> Result<DecodedImage, &'sta
     })
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::{c_int, c_ulong};
-    #[link(name = "z")]
-    extern "C" {
-        fn compress2(
-            dest: *mut u8,
-            dest_len: *mut c_ulong,
-            source: *const u8,
-            source_len: c_ulong,
-            level: c_int,
-        ) -> c_int;
-    }
+    use std::io::Write;
     fn chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
         let mut b = (data.len() as u32).to_be_bytes().to_vec();
         b.extend(kind);
@@ -205,22 +175,9 @@ mod tests {
         if bomb {
             raw.extend([0u8; 10000]);
         }
-        let mut compressed = vec![0u8; raw.len() + raw.len() / 100 + 128];
-        let mut len = compressed.len() as c_ulong;
-        // SAFETY: synthetic buffers sized above zlib's worst-case test bound.
-        assert_eq!(
-            unsafe {
-                compress2(
-                    compressed.as_mut_ptr(),
-                    &mut len,
-                    raw.as_ptr(),
-                    raw.len() as c_ulong,
-                    6,
-                )
-            },
-            0
-        );
-        compressed.truncate(len as usize);
+        let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), Default::default());
+        encoder.write_all(&raw).unwrap();
+        let compressed = encoder.finish().unwrap();
         let mut b = b"\x89PNG\r\n\x1a\n".to_vec();
         let mut h = 256u32.to_be_bytes().to_vec();
         h.extend(256u32.to_be_bytes());

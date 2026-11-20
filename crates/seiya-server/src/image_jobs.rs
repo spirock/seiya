@@ -452,7 +452,7 @@ impl ImageJobs {
             admission,
             Duration::from_secs(620),
             native_verify,
-            cfg!(target_os = "macos"),
+            true,
         )
     }
     fn configured(
@@ -1606,7 +1606,6 @@ mod tests {
             Err(Error::NotReady)
         ));
     }
-    #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn actual_decoder_accepts_synthetic_png_and_rejects_corruption_without_models() {
         fn chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {

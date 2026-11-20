@@ -117,7 +117,6 @@ mod tests {
         ] {
             assert!(decode(&value, "binding").is_err());
         }
-        #[cfg(target_os = "macos")]
         assert!(
             seiya_observe::image::artifact::decode(&png, 512, 512)
                 .unwrap()

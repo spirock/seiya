@@ -29,6 +29,19 @@ permissions:
   contents: read
 
 jobs:
+  portable-png:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked -p seiya-observe --lib image::artifact::tests
+      - run: cargo test --locked -p seiya-server --lib actual_decoder_accepts_synthetic_png_and_rejects_corruption_without_models
+      - run: cargo test --locked -p seiya-server --lib local_models::pool::tests::image_cases
+
   contracts:
     runs-on: ubuntu-latest
     steps:

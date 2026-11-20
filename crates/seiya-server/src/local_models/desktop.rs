@@ -27,6 +27,8 @@ struct Saved {
     model_store: String,
     #[serde(default)]
     image: Option<String>,
+    #[serde(default)]
+    managed_ollama: bool,
 }
 impl Desktop {
     pub(crate) fn new(root: PathBuf, catalog_path: PathBuf) -> Self {
@@ -55,8 +57,55 @@ impl Desktop {
             workers: draft.roles.workers.clone(),
         })
     }
+    fn managed_candidate(draft: &Draft) -> bool {
+        super::manager::supported()
+            && super::manager::valid_model_id(&draft.roles.brain)
+            && super::manager::installed(&draft.roles.brain)
+            && draft.roles.workers.is_empty()
+            && draft.roles.image.is_empty()
+            && draft.image_binary.is_empty()
+            && draft.image_assets.is_empty()
+    }
+    fn saved_managed(&self) -> Result<bool, String> {
+        let Some(bytes) = storage::read(&self.roles_path())? else {
+            return Ok(false);
+        };
+        let saved: Saved =
+            serde_json::from_slice(&bytes).map_err(|_| "local_roles_invalid_schema")?;
+        Ok(saved.version == 1 && saved.managed_ollama)
+    }
 }
 impl Adapter for Desktop {
+    fn inventory_supported(&self) -> bool {
+        true
+    }
+    fn inventory(&self, id: String) -> Work<'_, &'static str> {
+        Box::pin(async move {
+            use crate::runtime::{HttpTransport, TransportError};
+            let (catalog, _) = self.catalog()?;
+            let runtime = catalog
+                .models
+                .iter()
+                .find(|m| m.id == id)
+                .map(|m| &m.runtime)
+                .or_else(|| {
+                    catalog
+                        .image_models
+                        .iter()
+                        .find(|m| m.id == id)
+                        .map(|m| &m.runtime)
+                })
+                .ok_or("unknown_catalog_id")?;
+            let transport = HttpTransport::new(runtime).map_err(|e| e.to_string())?;
+            Ok(match transport.advertises(&runtime.model).await {
+                Ok(true) => "advertised",
+                Ok(false) => "absent",
+                Err(TransportError::NotConnected) => "unreachable",
+                Err(TransportError::Timeout) => "timeout",
+                Err(_) => "inventory_error",
+            })
+        })
+    }
     fn allows_unassigned_configuration(&self) -> bool {
         true
     }
@@ -66,21 +115,28 @@ impl Adapter for Desktop {
         true
     }
     fn supports(&self, draft: &Draft) -> bool {
-        Self::assignments(draft)
-            .and_then(|r| {
-                self.catalog().and_then(|(mut c, _)| {
-                    c.assignments = r;
-                    c.image = (!draft.roles.image.is_empty()).then(|| draft.roles.image.clone());
-                    c.validate().map_err(|e| e.to_string())
+        match self.catalog() {
+            Ok((mut catalog, _)) => Self::assignments(draft)
+                .and_then(|r| {
+                    catalog.assignments = r;
+                    catalog.image =
+                        (!draft.roles.image.is_empty()).then(|| draft.roles.image.clone());
+                    catalog.validate().map_err(|e| e.to_string())
                 })
-            })
-            .is_ok()
+                .is_ok(),
+            Err(error) if error == "local_catalog_required" => {
+                super::manager::supported()
+                    && (Self::managed_candidate(draft)
+                        || !draft.roles.brain.is_empty() && self.saved_managed().unwrap_or(false))
+            }
+            Err(_) => false,
+        }
     }
     fn filesystem_checked(&self) -> bool {
         false
     }
     fn effects(&self) -> String {
-        let mut text="Backend HTTP local externo. Guardar cambia asignaciones y rutas privadas; no modifica el catálogo, inicia motores, descarga pesos ni valida inferencia. La ruta Ollama solo comprueba archivos, no conecta ni certifica su runtime; el almacén es un metadato no explorado. Los endpoints deben estar dedicados a esta instancia; locks cooperativos no controlan clientes ajenos. Memoria/VRAM y modelos residentes siguen bajo el motor. ".to_owned();
+        let mut text="Backend HTTP local externo. Guardar cambia asignaciones y rutas privadas; no modifica el catálogo, inicia motores, descarga pesos ni valida inferencia. La ruta Ollama solo comprueba archivos; el almacén es un metadato no explorado. Los endpoints deben estar dedicados a esta instancia; locks cooperativos no controlan clientes ajenos. Memoria/VRAM y modelos residentes siguen bajo el motor. Si eliges un modelo Ollama sin catálogo, Confirmar e iniciar crea una instancia privada en 127.0.0.1:49401, comprueba solo su inventario y la detiene al cerrar el chat; nunca adopta ni detiene el servicio compartido en 11434. No se ejecuta inferencia hasta enviar un mensaje. ".to_owned();
         if let Ok((catalog, _)) = self.catalog() {
             if catalog.web_search {
                 text.push_str("Búsqueda web ACTIVADA: las consultas propuestas se envían a html.duckduckgo.com y pueden leerse fuentes HTTPS públicas. Sin cookies/login, archivos personales, proxy o fallback; crear/iniciar host no consulta Internet. ");
@@ -145,7 +201,14 @@ impl Adapter for Desktop {
             },
             ..Draft::default()
         };
-        let backend = if catalog.is_some() {
+        let managed = saved
+            .as_ref()
+            .is_some_and(|s| s.managed_ollama && super::manager::supported());
+        let backend = if managed {
+            "Modelo Ollama seleccionado; Seiya usará su instancia privada al iniciar explícitamente."
+        } else if saved.as_ref().is_some_and(|s| s.managed_ollama) {
+            "Este perfil de instancia privada Ollama todavía no se ejecuta en esta plataforma."
+        } else if catalog.is_some() {
             "Catálogo HTTP local de texto disponible; revisa IDs y endpoints antes de iniciar."
         } else {
             "Falta local-models.json: puedes guardar la ruta, pero el chat no puede iniciarse sin catálogo válido."
@@ -174,6 +237,30 @@ impl Adapter for Desktop {
                 }
                 vec![]
             }
+            Err(e)
+                if e == "local_catalog_required"
+                    && Self::managed_candidate(&draft)
+                    && assignments.workers.is_empty() =>
+            {
+                super::manager::managed_catalog(&draft.roles.brain).map_err(str::to_owned)?
+            }
+            Err(e)
+                if e == "local_catalog_required"
+                    && !draft.roles.brain.is_empty()
+                    && !super::manager::valid_model_id(&draft.roles.brain) =>
+            {
+                return Err("invalid_model_id".into());
+            }
+            Err(e)
+                if e == "local_catalog_required"
+                    && !draft.roles.brain.is_empty()
+                    && (draft.roles.workers.len() > 0 || !draft.roles.image.is_empty()) =>
+            {
+                return Err("ollama_managed_roles_unsupported".into());
+            }
+            Err(e) if e == "local_catalog_required" && !draft.roles.brain.is_empty() => {
+                return Err("ollama_model_not_installed".into());
+            }
             Err(e) => return Err(e),
         };
         storage::ensure_directory(&self.root)?;
@@ -193,7 +280,17 @@ impl Adapter for Desktop {
         if self.baseline()? != approval.baseline {
             return Err("profile_changed_no_overwrite".into());
         }
-        let assignments = if approval.profile.is_empty() {
+        let managed_ollama = !approval.profile.is_empty()
+            && Catalog::parse(&approval.profile)
+                .ok()
+                .and_then(|catalog| super::manager::managed_model(&catalog).map(str::to_owned))
+                .is_some();
+        let assignments = if managed_ollama {
+            Some(Assignments {
+                brain: approval.draft.roles.brain.clone(),
+                workers: vec![],
+            })
+        } else if approval.profile.is_empty() {
             None
         } else {
             Some(
@@ -208,6 +305,7 @@ impl Adapter for Desktop {
             ollama_binary: approval.draft.llm_binary.clone(),
             model_store: approval.draft.model_store.clone(),
             image: Some(approval.draft.roles.image.clone()),
+            managed_ollama,
         })
         .map_err(|_| "local_roles_encode")?;
         let old = storage::read(&self.roles_path())?;
@@ -233,6 +331,7 @@ impl Adapter for Desktop {
                 return Err("startup_cancelled".into());
             }
             let catalog = Catalog::parse(&profile).map_err(|e| e.to_string())?;
+            let managed_model = super::manager::managed_model(&catalog).map(str::to_owned);
             let brain = catalog
                 .model(&catalog.assignments.brain)
                 .map_err(|e| e.to_string())?
@@ -293,6 +392,22 @@ impl Adapter for Desktop {
             let (router, bootstrap) = crate::pair_trial::access::app(address, state.clone())
                 .map_err(|e| e.to_string())?;
             let home = state.local_browser_home(address);
+            let owned_ollama = if let Some(model) = managed_model {
+                let saved = storage::read(&self.roles_path())?.ok_or("local_roles_required")?;
+                let saved: Saved =
+                    serde_json::from_slice(&saved).map_err(|_| "local_roles_invalid_schema")?;
+                if !saved.managed_ollama {
+                    return Err("local_roles_invalid_schema".into());
+                }
+                tokio::select! {
+                    result = super::manager::launch_owned(&saved.ollama_binary, &model) => {
+                        Some(result?)
+                    },
+                    _ = stop.changed() => return Err("startup_cancelled".into()),
+                }
+            } else {
+                None
+            };
             let done = tokio::spawn(async move {
                 if !*stop.borrow() {
                     let _ = stop.changed().await;
@@ -301,6 +416,9 @@ impl Adapter for Desktop {
                 let drained = state.shutdown_local_models().await;
                 while !pool.idle() {
                     tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                if let Some(child) = owned_ollama {
+                    super::manager::stop_owned(child).await?;
                 }
                 drained?;
                 if pool.uncertain() {

@@ -92,9 +92,30 @@ Si no encuentra ninguno, deja el primer candidato y avisa; no afirma que Ollama
 no esté instalado. El override inválido se conserva sin fallback silencioso.
 Borrar el campo y guardar restaura autodetección. Encontrado solo acredita un
 archivo legible y bits ejecutables en Unix, no autenticidad ni compatibilidad.
-No hay arranque, descarga, consulta11434 ni inspección de modelos. En el adaptador
-portable se guardan rutas aun sin catálogo, pero iniciar sigue bloqueado. macOS
-sin catálogo conserva la revisión estricta del perfil MLX pinned anterior.
+La detección al abrir no arranca procesos ni consulta11434. En Linux, la sección
+Gestor de Ollama añade acciones separadas: actualizar el inventario privado,
+pedir una descarga y borrar un modelo; cada operación requiere pulsar su control.
+Estas acciones usan un almacén privado de Seiya (`ollama-models`) y un servidor
+temporal en 127.0.0.1:49401, que se cierra al terminar. La búsqueda del catálogo
+oficial abre ollama.com en el navegador. El combo Cerebro se llena con el último
+inventario privado que el usuario pidió actualizar. Los modelos del servicio
+compartido no se adoptan ni se copian automáticamente.
+
+Sin `local-models.json`, Linux puede guardar la selección de un único modelo de
+texto y, solo al confirmar explícitamente «Iniciar», lanzar el binario configurado
+con `OLLAMA_HOST=127.0.0.1:49401`, `OLLAMA_MODELS` apuntando al almacén privado y
+`OLLAMA_NO_CLOUD=1`. Comprueba el inventario
+de esa instancia privada, no genera en el arranque y la detiene al cerrar el chat.
+Si el puerto está ocupado, falla sin conectarse al ocupante. Nunca adopta ni
+detiene el servicio compartido en11434. La inferencia solo comienza cuando el
+usuario envía un mensaje; los workers, imágenes y búsqueda web no forman parte de
+este perfil mínimo. El proceso se ejecuta en un grupo propio para que detener el
+host también cierre el runner hijo de Ollama, sin enviar señales al grupo del
+daemon compartido.
+
+En el adaptador portable se guardan rutas aun sin catálogo, pero el inicio sigue
+bloqueado para otros perfiles. macOS sin catálogo conserva la revisión estricta
+del perfil MLX pinned anterior.
 La identidad del SO/arquitectura del backend se centraliza en el driver Rust
 platform; no se toma del navegador. Se sirve la web en navegador, sin añadir
 gestor de ventanas ni requerir Docker. El futuro diseño de tools por manifiesto

@@ -139,6 +139,15 @@ class RustPackagingTests(unittest.TestCase):
                     self.assertNotIn('Depends: python', control)
                 with tarfile.open(fileobj=io.BytesIO(parts['data.tar.gz'])) as archive:
                     names = archive.getnames()
+                    for directory in (
+                        './usr',
+                        './usr/lib',
+                        './usr/lib/seiya-rust',
+                        './usr/lib/seiya-rust/bin',
+                        './usr/share',
+                        './usr/share/doc/seiya-rust-experimental',
+                    ):
+                        self.assertEqual(archive.getmember(directory).type, tarfile.DIRTYPE)
                     self.assertNotIn('./usr/bin/seiya', names)
                     self.assertFalse(any(n.endswith(('.py', '.gguf', '.pem', '.der')) for n in names))
                     info = json.load(archive.extractfile('./usr/share/doc/seiya-rust-experimental/BUILD-INFO.json'))

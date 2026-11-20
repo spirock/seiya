@@ -90,6 +90,12 @@ pub(crate) trait Adapter: Send + Sync {
     fn allows_update_check(&self) -> bool {
         true
     }
+    fn inventory_supported(&self) -> bool {
+        false
+    }
+    fn inventory(&self, _id: String) -> Work<'_, &'static str> {
+        Box::pin(async { Err("inventory_not_supported".into()) })
+    }
     fn allows_unassigned_configuration(&self) -> bool {
         false
     }
@@ -200,7 +206,7 @@ async fn status(State(s): State<Arc<Setup>>) -> Json<Value> {
     Json(
         json!({"platform":crate::platform::current().os.name(),"architecture":crate::platform::current().architecture,"runtime_available":s.adapter.available(),
         "phase":c.phase,"error":c.error,"chat":c.chat,"restored_host":c.restored,
-        "automatic_inference_requested":false,"inference_tested":false}),
+        "inventory_supported":s.adapter.inventory_supported(),"model_manager_supported":crate::local_models::manager::supported(),"automatic_inference_requested":false,"inference_tested":false}),
     )
 }
 async fn detect(State(s): State<Arc<Setup>>) -> Response {
@@ -245,6 +251,59 @@ async fn check_update(State(s): State<Arc<Setup>>, Json(request): Json<UpdateReq
             Json(json!({"error":error})),
         )
             .into_response(),
+    }
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Inventory {
+    id: String,
+}
+async fn inventory(State(s): State<Arc<Setup>>, Json(v): Json<Inventory>) -> Response {
+    if v.id.is_empty() || v.id.len() > 200 || v.id.chars().any(char::is_control) {
+        return failure("invalid_catalog_id");
+    }
+    let Ok(_permit) = s.operation.try_acquire() else {
+        return failure("operation_busy");
+    };
+    match tokio::time::timeout(Duration::from_secs(5), s.adapter.inventory(v.id)).await {
+        Ok(Ok(state)) => Json(json!({"state":state,"inference_tested":false})).into_response(),
+        Ok(Err(e)) => failure(e),
+        Err(_) => Json(json!({"state":"timeout","inference_tested":false})).into_response(),
+    }
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ModelName {
+    name: String,
+}
+async fn managed_models() -> Response {
+    match crate::local_models::manager::list().await {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => failure(error),
+    }
+}
+async fn pull_model(Json(v): Json<ModelName>) -> Response {
+    match crate::local_models::manager::pull(&v.name).await {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => failure(error),
+    }
+}
+async fn delete_model(Json(v): Json<ModelName>) -> Response {
+    match crate::local_models::manager::delete(&v.name).await {
+        Ok(()) => Json(json!({"deleted":true})).into_response(),
+        Err(error) => failure(error),
+    }
+}
+async fn model_progress() -> Response {
+    match crate::local_models::manager::progress() {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => failure(error),
+    }
+}
+async fn cancel_model_download() -> Response {
+    match crate::local_models::manager::cancel() {
+        Ok(()) => Json(json!({"cancelled":true})).into_response(),
+        Err(error) => failure(error),
     }
 }
 #[derive(Deserialize)]
@@ -501,6 +560,12 @@ fn application_at_with_key(
         .route("/api/status", get(status))
         .route("/api/detect", get(detect))
         .route("/api/update-check", post(check_update))
+        .route("/api/inventory", post(inventory))
+        .route("/api/models", get(managed_models))
+        .route("/api/models/pull", post(pull_model))
+        .route("/api/models/progress", get(model_progress))
+        .route("/api/models/cancel", post(cancel_model_download))
+        .route("/api/models/delete", post(delete_model))
         .route("/api/pick", post(pick))
         .route("/api/review", post(review))
         .route("/api/confirm", post(confirm))

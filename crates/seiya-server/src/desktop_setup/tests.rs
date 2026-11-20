@@ -560,6 +560,20 @@ async fn saved_host_starts_once_without_saving_or_dispatching_a_model() {
 async fn inert_shell_preserves_styles_and_requires_auth_before_side_effects() {
     let (app, prefix, cookie, fake, _) = fixture().await;
     assert_eq!(call(&app, &prefix, "", "", None).await.status(), 401);
+    for (path, body) in [
+        ("api/models", None),
+        ("api/models/pull", Some(json!({"name":"gemma4:12b"}))),
+        ("api/models/delete", Some(json!({"name":"gemma4:12b"}))),
+        ("api/models/cancel", Some(json!({}))),
+    ] {
+        assert_eq!(
+            call(&app, &format!("{prefix}{path}"), "", "", body)
+                .await
+                .status(),
+            401,
+            "{path} must require the setup session"
+        );
+    }
     assert_eq!(
         call(&app, &prefix, &cookie, "https://foreign.invalid", None)
             .await

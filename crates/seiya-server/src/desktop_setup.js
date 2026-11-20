@@ -3,6 +3,7 @@
   const el = id => document.getElementById(id);
   const fields = {llm_binary:'setupLlm', model_store:'setupStore', image_binary:'setupImageBinary', image_assets:'setupImageAssets'};
   let baseline = [], approval = null, busy = false, polling = false, runtimeAvailable = true;
+  const defaultBrainOptions = Array.from(el('setupBrains').options || [], option => option.value);
   const roleKey = 'seiya.desktop.roles.v1';
   function restoreRoles() {
     const roles = JSON.parse(localStorage.getItem(roleKey) || 'null');
@@ -50,6 +51,21 @@
     if (code === 'stop_runtime_before_editing' || code === 'runtime_busy') return 'Detén los motores y espera la confirmación de cierre antes de cambiar la configuración.';
     if (code === 'operation_busy') return 'Hay otra operación en curso. Espera o solicita la parada.';
     if (code === 'platform_adapter_not_implemented') return 'El adaptador de inferencia de esta plataforma todavía no está implementado. Puedes guardar un borrador de los roles en el navegador.';
+    if (code === 'model_manager_unsupported') return 'El gestor de modelos está habilitado solo en Linux por ahora.';
+    if (code === 'ollama_unreachable') return 'No se pudo conectar con Ollama en este equipo. Instálalo e inícialo manualmente; Seiya no lo ejecutará automáticamente.';
+    if (code === 'invalid_model_id') return 'El ID del modelo contiene caracteres no admitidos.';
+    if (code === 'ollama_pull_rejected') return 'Ollama rechazó la descarga. Comprueba el ID y la conexión a Internet.';
+    if (code === 'ollama_pull_failed') return 'Ollama informó un error durante la descarga.';
+    if (code === 'ollama_stream_error' || code === 'ollama_invalid_response') return 'Ollama devolvió una respuesta que Seiya no pudo leer.';
+    if (code === 'ollama_delete_rejected') return 'Ollama no pudo eliminar ese modelo.';
+    if (code === 'ollama_model_not_installed') return 'El modelo no aparece en el almacén privado de Seiya. Descárgalo desde el gestor; no se copiarán modelos del servicio compartido.';
+    if (code === 'ollama_managed_roles_unsupported') return 'El modo Ollama privado admite solo un Cerebro, sin trabajadores ni imágenes.';
+    if (code === 'ollama_owned_port_busy') return 'El puerto privado de Seiya está ocupado. No se conectó ni adoptó el proceso que lo usa.';
+    if (code === 'ollama_owned_start_timeout') return 'La instancia privada de Ollama no respondió a tiempo; Seiya la detuvo.';
+    if (code === 'ollama_binary_invalid') return 'No se encontró un ejecutable Ollama válido en la ruta configurada.';
+    if (code === 'ollama_owned_start_failed') return 'No se pudo iniciar la instancia privada de Ollama.';
+    if (code === 'ollama_owned_stop_failed') return 'Seiya no pudo confirmar el cierre de su instancia privada; no se considera detenido.';
+    if (code === 'ollama_private_store_invalid') return 'No se pudo preparar el almacén privado de modelos de Seiya.';
     if (code === 'cancelled') return 'Selección cancelada.';
     return code;
   }
@@ -74,7 +90,23 @@
     localStorage.setItem(roleKey, JSON.stringify(roles));
     message('Asignaciones guardadas solo en este navegador, sin activar modelos. La configuración del motor se guarda por separado al confirmar.');
   }));
-  el('setupForm').addEventListener('input', invalidate);
+  el('setupForm').addEventListener('input', event => {
+    if(event.target!==el('setupProbeId'))invalidate();
+    el('setupProbeResult').textContent='';
+  });
+  el('setupProbe').addEventListener('click', () => action(async () => {
+    const id=el('setupProbeId').value.trim()||el('setupBrain').value.trim();
+    const out=el('setupProbeResult');
+    if(!id){out.textContent='Indica un ID del catálogo.';return;}
+    out.textContent='Consultando el inventario…';
+    const labels={advertised:'El motor anuncia el modelo.',absent:'El motor respondió, pero no anuncia el modelo.',unreachable:'No se pudo conectar con el motor.',timeout:'El motor no respondió a tiempo.',inventory_error:'No se obtuvo un inventario válido.'};
+    try{
+      const v=await api('inventory',{id});
+      out.textContent=id+': '+(labels[v.state]||'Resultado desconocido.')+' Inferencia no probada.';
+    }catch(e){
+      out.textContent=(e.message==='unknown_catalog_id'?'ID no registrado en el catálogo.':e.message==='local_catalog_required'?'Primero configura un catálogo HTTP local.':'No se pudo consultar el catálogo.')+' Inferencia no probada.';
+    }
+  }));
   el('setupDetect').addEventListener('click', () => action(detect));
   for (const button of document.querySelectorAll('[data-pick]')) button.addEventListener('click', () => action(async () => {
     const field = button.dataset.pick, v = await api('pick', {field}); el(fields[field]).value = v.path; invalidate();
@@ -105,6 +137,87 @@
   }));
   el('setupStop').addEventListener('click', () => action(async () => { await api('stop', {}); invalidate(); message('Parada solicitada; esperando confirmación de cierre.'); }));
   el('setupQuit').addEventListener('click', () => action(async () => { await api('quit', {}); message('Cerrando Seiya. Puedes cerrar esta pestaña.'); }));
+  let modelPull = false;
+  function modelSearchLink() {
+    const q = el('managerSearch').value.trim();
+    el('managerSearchLink').href = 'https://ollama.com/search' + (q ? '?q=' + encodeURIComponent(q) : '');
+  }
+  el('managerSearch').addEventListener('input', modelSearchLink);
+  async function refreshInstalled() {
+    const value = await api('models');
+    const select = el('managerInstalled');
+    select.replaceChildren(new Option('—', ''));
+    const brains = el('setupBrains');
+    const options = new Map(defaultBrainOptions.map(name => [name, new Option(name, name)]));
+    for (const model of value.models) {
+      const option = new Option(model.name + ' · ' + formatModelSize(model.size), model.name);
+      select.add(option);
+      if (!options.has(model.name)) options.set(model.name, new Option(model.name, model.name));
+    }
+    brains.replaceChildren(...options.values());
+    el('managerProgress').textContent = value.models.length
+      ? value.models.length + ' modelo(s) local(es).'
+      : 'No hay modelos instalados.';
+  }
+  el('managerRefresh').addEventListener('click', () => action(refreshInstalled));
+  function formatModelSize(bytes) {
+    if (!Number.isFinite(bytes) || bytes < 0) return 'tamaño desconocido';
+    const units = ['B','KB','MB','GB','TB']; let value = bytes, unit = 0;
+    while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+    return value.toFixed(unit ? 1 : 0) + ' ' + units[unit];
+  }
+  el('managerPull').addEventListener('click', async () => {
+    if (modelPull) return;
+    const name = el('managerModelName').value.trim();
+    if (!name) { el('managerProgress').textContent = 'Escribe el ID del modelo que quieres descargar.'; return; }
+    modelPull = true;
+    el('managerPull').disabled = true;
+    el('managerCancel').disabled = false;
+    el('managerDelete').disabled = true;
+    el('managerRefresh').disabled = true;
+    el('managerInstalled').disabled = true;
+    el('managerProgress').textContent = 'Iniciando descarga en Ollama…';
+    try {
+      await api('models/pull', {name});
+      let progress;
+      do {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        progress = await api('models/progress');
+        const amount = Number.isFinite(progress.completed) && Number.isFinite(progress.total) && progress.total > 0
+          ? ' · ' + Math.min(100, Math.floor(progress.completed / progress.total * 100)) + '% (' + formatModelSize(progress.completed) + ' / ' + formatModelSize(progress.total) + ')'
+          : '';
+        el('managerProgress').textContent = progress.status + amount;
+      } while (progress.active);
+      if (progress.error) throw new Error(progress.error);
+      await refreshInstalled();
+      if (progress.status === 'Cancelación solicitada.') {
+        el('managerProgress').textContent = 'Descarga cancelada. Puede que Ollama tarde un momento en liberar la transferencia.';
+      }
+    } catch (e) {
+      el('managerProgress').textContent = explain(e.message) + ' No se inició inferencia.';
+    } finally {
+      modelPull = false;
+      el('managerPull').disabled = false;
+      el('managerCancel').disabled = true;
+      el('managerDelete').disabled = false;
+      el('managerRefresh').disabled = false;
+      el('managerInstalled').disabled = false;
+    }
+  });
+  el('managerCancel').addEventListener('click', async () => {
+    if (!modelPull) return;
+    el('managerCancel').disabled = true;
+    try { await api('models/cancel', {}); }
+    catch (e) { el('managerProgress').textContent = explain(e.message); }
+  });
+  el('managerDelete').addEventListener('click', () => action(async () => {
+    const name = el('managerInstalled').value;
+    if (!name) { el('managerProgress').textContent = 'Selecciona un modelo instalado.'; return; }
+    if (!window.confirm('¿Eliminar ' + name + ' del almacén de Ollama? Esta acción borra los pesos locales.')) return;
+    await api('models/delete', {name});
+    el('managerProgress').textContent = name + ' eliminado del almacén local.';
+    await refreshInstalled();
+  }));
   // Original chat scripts were deliberately omitted. Never send chat pre-setup.
   el('prompt').disabled = true; el('send').disabled = true;
   el('form').addEventListener('submit', e => e.preventDefault());
@@ -114,7 +227,9 @@
     polling = true;
     try {
       const v = await api('status');
-      el('setupPlatform').textContent = 'Equipo: ' + v.platform + ' / ' + (v.architecture || 'arquitectura no informada') + (v.runtime_available ? ' · adaptador macOS disponible' : ' · inferencia local aún no implementada');
+      el('setupInventory').hidden = v.inventory_supported !== true;
+      el('ollamaManager').hidden = v.model_manager_supported !== true;
+      el('setupPlatform').textContent = 'Equipo: ' + v.platform + ' / ' + (v.architecture || 'arquitectura no informada') + (v.inventory_supported ? ' · catálogo HTTP local' : v.runtime_available ? ' · adaptador disponible' : ' · sin adaptador de ejecución');
       el('setupEnter').hidden = v.phase !== 'running';
       el('runtimeStatus').textContent = 'Seiya: ' + v.phase;
       if (v.error) message(explain(v.error));

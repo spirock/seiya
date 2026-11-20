@@ -83,7 +83,6 @@ fn request() -> ImageRequest {
         seed: 42,
     }
 }
-#[cfg(target_os = "macos")]
 #[tokio::test]
 async fn http_image_adapter_uses_exact_local_inventory_and_generation_route() {
     use axum::{
@@ -112,10 +111,30 @@ async fn http_image_adapter_uses_exact_local_inventory_and_generation_route() {
         runtime: runtime.clone(),
     });
     c.image = Some("image".into());
-    let router=Router::new().route("/v1/models",get(||async {Json(json!({"data":[{"id":"image-binding"}]}))})).route("/v1/images/generations",post(move|Json(body):Json<Value>|{let calls=observed.clone();async move {
-        calls.fetch_add(1,Ordering::SeqCst);assert_eq!(body["model"],"image-binding");assert_eq!(body["response_format"],"b64_json");assert_eq!(body["seed"],42);
-        Json(json!({"model":"image-binding","data":[{"b64_json":STANDARD.encode(crate::local_models::images::fixture_png())}]}))
-    }}));
+    let router = Router::new()
+        .route(
+            "/v1/models",
+            get(|| async { Json(json!({"data":[{"id":"image-binding"}]})) }),
+        )
+        .route(
+            "/v1/images/generations",
+            post(move |Json(body): Json<Value>| {
+                let calls = observed.clone();
+                async move {
+                    let attempt = calls.fetch_add(1, Ordering::SeqCst);
+                    assert_eq!(body["model"], "image-binding");
+                    assert_eq!(body["response_format"], "b64_json");
+                    assert_eq!(body["seed"], 42);
+                    let mut png = crate::local_models::images::fixture_png();
+                    if attempt == 1 {
+                        png.pop();
+                    }
+                    Json(
+                        json!({"model":"image-binding","data":[{"b64_json":STANDARD.encode(png)}]}),
+                    )
+                }
+            }),
+        );
     let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
     let mut map = endpoints(
         &c,
@@ -130,16 +149,65 @@ async fn http_image_adapter_uses_exact_local_inventory_and_generation_route() {
     );
     let p = Pool::configured(c, &f.0, map, Arc::new(Memory(AtomicBool::new(true)))).unwrap();
     assert_eq!(calls.load(Ordering::SeqCst), 0);
-    let (_tx, cancel) = watch::channel(false);
-    let (stage, _) = watch::channel(ImageStage::Preparing);
-    let png = p.image(request(), cancel, stage).await.unwrap();
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
-    assert!(seiya_observe::image::artifact::decode(&png, 512, 512).is_ok());
-    assert!(!p.uncertain());
+    use crate::image_jobs::{Command, Error, ImageJobs, Reply};
+    let jobs = ImageJobs::new(
+        Arc::new(crate::local_models::images::Images(p.clone())),
+        p.clone(),
+    );
+    let json = |command| match jobs.control(command).unwrap() {
+        Reply::Json(value) => value,
+        Reply::Png(_) => panic!("expected job metadata"),
+    };
+    let session = json(Command::Session {})["session"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for valid in [true, false] {
+        let job_id = json(Command::Submit {
+            session: session.clone(),
+            request_id: uuid::Uuid::new_v4().to_string(),
+            request: request(),
+        })["job_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let terminal = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let state = json(Command::Status {
+                    session: session.clone(),
+                    job_id: job_id.clone(),
+                });
+                match state["phase"].as_str().unwrap() {
+                    "queued" | "preparing" | "running" | "validating" => {
+                        tokio::time::sleep(Duration::from_millis(5)).await
+                    }
+                    _ => break state,
+                }
+            }
+        })
+        .await
+        .expect("broker never reached a terminal phase");
+        let artifact = jobs.control(Command::Artifact {
+            session: session.clone(),
+            job_id,
+        });
+        if valid {
+            assert_eq!(terminal["phase"], "completed");
+            let Ok(Reply::Png(a)) = artifact else {
+                panic!("missing verified PNG")
+            };
+            assert_eq!(a.png.as_ref(), crate::local_models::images::fixture_png());
+            assert!(!p.uncertain());
+        } else {
+            assert_eq!(terminal["artifact_available"], false);
+            assert!(matches!(artifact, Err(Error::NotReady)));
+            assert!(p.uncertain());
+        }
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
     server.abort();
     let _ = server.await;
 }
-#[cfg(target_os = "macos")]
 #[tokio::test]
 async fn image_and_text_share_slot_and_cancel_waits_for_confirmed_response() {
     let f = Fixture::new();

@@ -1,4 +1,44 @@
 use super::*;
+#[tokio::test]
+async fn inventory_uses_registered_binding_and_only_reads_models() {
+    use axum::{routing::get, Json, Router};
+    let fixture = Fixture::new();
+    let adapter = fixture.adapter();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let (mut catalog, _) = adapter.catalog().unwrap();
+    catalog.models[0].runtime.base_url = format!("http://{}/v1", listener.local_addr().unwrap());
+    let runtime = catalog.models[0].runtime.clone();
+    let binding = runtime.model.clone();
+    catalog.image_models.push(crate::local_models::ImageModel {
+        id: "art".into(),
+        runtime: crate::runtime::RuntimeConfig {
+            id: "art".into(),
+            model: "absent-image-binding".into(),
+            ..runtime
+        },
+    });
+    std::fs::write(&adapter.catalog_path, serde_json::to_vec(&catalog).unwrap()).unwrap();
+    let app = Router::new().route(
+        "/v1/models",
+        get(move || async move { Json(serde_json::json!({"data":[{"id":binding}]})) }),
+    );
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    assert_eq!(
+        adapter.inventory("brain-small".into()).await.unwrap(),
+        "advertised"
+    );
+    assert_eq!(adapter.inventory("art".into()).await.unwrap(), "absent");
+    assert_eq!(
+        adapter.inventory("unregistered".into()).await.unwrap_err(),
+        "unknown_catalog_id"
+    );
+    server.abort();
+    let _ = server.await;
+    assert_eq!(
+        adapter.inventory("brain-small".into()).await.unwrap(),
+        "unreachable"
+    );
+}
 #[test]
 fn image_role_is_interchangeable_and_cas_preserves_models_and_profiles() {
     let f = Fixture::new();
@@ -112,6 +152,33 @@ fn missing_catalogue_is_inert_and_paths_images_unknown_models_and_stale_approval
         adapter.save(&approved).err().unwrap(),
         "profile_changed_no_overwrite"
     );
+}
+
+#[test]
+fn ollama_model_can_be_saved_without_catalogue_but_only_as_owned_runtime_profile() {
+    let f = Fixture::new();
+    let adapter = Desktop::new(f.0.clone(), f.0.join("local-models.json"));
+    super::super::manager::remember_installed_for_test("gemma4:12b");
+    let snap = adapter.snapshot().unwrap();
+    let mut draft = snap.draft;
+    draft.roles.brain = "gemma4:12b".into();
+    assert!(adapter.supports(&draft));
+    let approved = adapter.review(draft.clone(), snap.baseline).unwrap();
+    let catalog = Catalog::parse(&approved.profile).unwrap();
+    assert_eq!(
+        super::super::manager::managed_model(&catalog),
+        Some("gemma4:12b")
+    );
+    assert_eq!(
+        catalog.models[0].runtime.base_url,
+        "http://127.0.0.1:49401/v1"
+    );
+    adapter.save(&approved).unwrap();
+    let saved = adapter.snapshot().unwrap();
+    assert_eq!(saved.draft.roles.brain, "gemma4:12b");
+    assert!(saved.warning.unwrap().contains("instancia privada"));
+    assert!(!adapter.catalog_path.exists());
+    assert!(adapter.supports(&saved.draft));
 }
 #[test]
 fn ollama_override_is_saved_without_catalogue_but_does_not_enable_start() {

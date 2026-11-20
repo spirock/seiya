@@ -43,8 +43,10 @@ CRC, dimensiones512×512 y píxeles/zlib antes de confirmar. **Esta extensión d
 binding de respuesta no es universal en APIs OpenAI**: si el motor omite model,
 devuelve URL/JPEG o usa otro protocolo, necesita un adaptador explícito. No hay
 fallback ni relajación silenciosa. No probado con motores de imagen reales.
-El decodificador nativo actual solo permite anunciar generación en macOS;
-no afirmar soporte de imágenes Linux/Windows por compilar el catálogo.
+La validación de píxeles del adaptador HTTP usa el mismo decodificador Rust
+en Linux, Windows y macOS. No instala un motor ni habilita el ejecutor
+nativo de macOS en otros sistemas. Las pruebas con PNG sintéticos no
+certifican inferencia real con un motor de imágenes.
 
 ## Pedir y recuperar
 

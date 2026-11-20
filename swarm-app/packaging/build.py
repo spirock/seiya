@@ -133,14 +133,17 @@ def tgz(root):
     with gzip.GzipFile(fileobj=buffer, mode='wb', mtime=0) as compressed:
         with tarfile.open(fileobj=compressed, mode='w') as archive:
             for file in sorted(root.rglob('*')):
-                if not file.is_file():
+                if not file.is_file() and not file.is_dir():
                     continue
                 info = archive.gettarinfo(str(file), arcname='./' + file.relative_to(root).as_posix())
                 info.uid = info.gid = 0
                 info.uname = info.gname = 'root'
                 info.mtime = 0
-                with file.open('rb') as data:
-                    archive.addfile(info, data)
+                if file.is_dir():
+                    archive.addfile(info)
+                else:
+                    with file.open('rb') as data:
+                        archive.addfile(info, data)
     return buffer.getvalue()
 
 

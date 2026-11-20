@@ -11,11 +11,22 @@ runtime_available indica disponibilidad del adaptador de configuración. La UI
 existente requiere ese flag para revisar/guardar; executable sigue false sin
 catálogo. Los demás adaptadores conservan el requisito de cerebro no vacío.
 
-Alternativa descartada: ejecutar --version o consultar 11434 durante apertura,
-por efectos/propiedad del runtime y porque no acredita compatibilidad de modelos.
+Alternativa descartada en la detección automática: ejecutar --version o consultar
+11434 durante apertura, por efectos/propiedad del runtime y porque no acredita
+compatibilidad de modelos. La posterior interfaz explícita del gestor permite al
+usuario actualizar inventario, descargar o borrar bajo demanda; la pantalla de
+apertura sigue sin consultar el servicio.
 La comprobación sigue enlaces de instalación habituales y comprueba archivo
 accesible (y bits de ejecución Unix), no autenticidad ni inferencia. Un override
 inválido se conserva y avisa; no fallback silencioso. Borrar el campo restaura
 autodetección. No explorar discos, almacenes de modelos ni PATH arbitrario.
 El aviso y la ruta se presentan al abrir/revisar Configuración. La búsqueda de
 archivos se repite al obtener snapshot; no se afirma ausencia de instalación.
+
+El perfil Linux del gestor usa una instancia Ollama propia en 127.0.0.1:49401
+para inventario/descarga solo bajo acciones explícitas y para chat solo después de
+Confirmar e iniciar. Todos esos procesos usan el almacén privado de Seiya; no
+adoptan ni modifican el almacén ni detienen el servicio 11434. Su inventario de
+arranque tampoco ejecuta inferencia; el primer mensaje del usuario es el primer
+punto de generación. Se supervisa un grupo de procesos propio para limpiar
+también los runners hijos al detener el host. Ver `BACKENDS_LOCALES.md`.

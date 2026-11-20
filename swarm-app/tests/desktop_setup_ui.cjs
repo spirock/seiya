@@ -43,7 +43,8 @@ async function fixture(available=true, stored=new Map(), initialPhase='unconfigu
     const name=url.pathname.split('/').at(-1), body=options.body?JSON.parse(options.body):null; calls.push({name,body});
     let value={};
     if(name==='detect')value={draft,baseline:[],warning:null};
-    else if(name==='status')value={platform:available?'macos':'windows',runtime_available:available,phase,error:null,restored_host:restored};
+    else if(name==='status')value={platform:available?'macos':'windows',runtime_available:available,inventory_supported:available,phase,error:null,restored_host:restored};
+    else if(name==='inventory')value={state:body.id==='brain-small'?'advertised':'absent',inference_tested:false};
     else if(name==='review')value={approval:'one-use',draft:body.draft,executable:available&&body.draft.roles.brain==='gemma4:e2b-mlx',effects:'filesystem only'};
     else if(name==='confirm'){if(hold)await new Promise(r=>release=r);if(lost){lost=false;throw Error('response lost')}value={saved:true};phase=body.start?'starting':'saved';}
     else if(name==='pick')value={path:'/synthetic/chosen'};
@@ -56,6 +57,17 @@ async function fixture(available=true, stored=new Map(), initialPhase='unconfigu
   return{get,picks,calls,nav,stored,storageCalls,ctx,saved:()=>saved,phase(v){phase=v},enterUrl(v){enterUrl=v},lose(){lost=true},hold(){hold=true},release(){hold=false;release()}};
 }
 (async()=>{
+  const probe=await fixture();assert.ok(!probe.calls.some(c=>c.name==='inventory'));
+  assert.ok(!probe.calls.some(c=>['models','pull','delete','progress'].includes(c.name)),'opening settings must not contact Ollama or download models');
+  assert.match(markup,/Buscar en Ollama/);assert.match(markup,/Descargar/);assert.match(markup,/Eliminar modelo seleccionado/);
+  assert.match(original,/model_manager_supported !== true/);
+  assert.match(markup,/Cerebro · escribe para buscar entre los modelos instalados/);
+  assert.match(original,/brains\.replaceChildren/);
+   probe.get('setupProbeId').value='brain-small';
+   await probe.get('setupProbe').click();
+   assert.match(probe.get('setupProbeResult').textContent,/anuncia el modelo.*Inferencia no probada/);
+   assert.deepEqual(probe.calls.filter(c=>c.name==='inventory').map(c=>c.body),[{id:'brain-small'}]);
+   assert.ok(!probe.calls.some(c=>['review','confirm','enter'].includes(c.name)));
    const running=await fixture(true,new Map(),'running');
    if(!running.nav.length){await running.ctx.poll();await tick();}
    assert.equal(running.nav.length,1);
