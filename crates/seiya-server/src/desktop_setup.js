@@ -135,7 +135,8 @@
       location.assign(target.href);
     }
   }));
-  el('setupStop').addEventListener('click', () => action(async () => { await api('stop', {}); invalidate(); message('Parada solicitada; esperando confirmación de cierre.'); }));
+  let awaitingStop = false;
+  el('setupStop').addEventListener('click', () => action(async () => { await api('stop', {}); invalidate(); awaitingStop = true; message('Parada solicitada; esperando confirmación de cierre.'); }));
   el('setupQuit').addEventListener('click', () => action(async () => { await api('quit', {}); message('Cerrando Seiya. Puedes cerrar esta pestaña.'); }));
   let modelPull = false;
   function modelSearchLink() {
@@ -232,6 +233,10 @@
       el('setupPlatform').textContent = 'Equipo: ' + v.platform + ' / ' + (v.architecture || 'arquitectura no informada') + (v.inventory_supported ? ' · catálogo HTTP local' : v.runtime_available ? ' · adaptador disponible' : ' · sin adaptador de ejecución');
       el('setupEnter').hidden = v.phase !== 'running';
       el('runtimeStatus').textContent = 'Seiya: ' + v.phase;
+      if (awaitingStop && ['saved','unconfigured','blocked'].includes(v.phase)) {
+        awaitingStop = false;
+        if (v.phase !== 'blocked' && !v.error) message('Motores detenidos. Ya puedes revisar la configuración.');
+      }
       if (v.error) message(explain(v.error));
     } catch (_) { message('Seiya no está disponible o la sesión caducó. Abre la aplicación de nuevo; no se reenvían acciones.'); }
     finally { polling = false; }

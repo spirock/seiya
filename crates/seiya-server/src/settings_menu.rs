@@ -34,7 +34,6 @@ pub(crate) fn render(home: Option<&str>) -> String {
     // Reuse the audited setup handlers, but not the standalone shell's composer
     // lock/status overrides. Setup requests keep their original authenticated base.
     let setup = crate::desktop_setup::navigation_script()
-        .replace(r"trial\/", r"app\/")
         .replace(
             "new URL('api/' + path, location.href)",
             "new URL('api/' + path, seiyaModelsBase.href)",
@@ -111,6 +110,7 @@ mod tests {
         assert!(html.contains("redirect:'error'"));
         assert!(!html.contains("el('prompt').disabled = true"));
         assert!(!html.contains("el('runtimeStatus').textContent"));
+        assert!(!html.contains("el('setupEnter').click()"));
         assert!(!html.contains("<iframe"));
         let rejected = render(Some("</script><script>untrusted()</script>"));
         assert!(rejected.contains("const seiyaModelsHome=null"));

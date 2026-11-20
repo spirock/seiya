@@ -179,7 +179,7 @@ async fn page() -> Html<String> {
     Html(format!(
         "{shell}{}<script>{}\n{}\n{}\n{}\nseiyaMountUpdate(location.href);</script></html>",
         include_str!("desktop_setup.html").replace("position:fixed;inset:64px 16px 16px auto;width:min(780px,calc(100% - 32px));overflow:auto;", "max-width:780px;margin:0 auto;"),
-        navigation_script(),
+        standalone_navigation_script(),
         include_str!("desktop_setup_feedback.js"),
         include_str!("desktop_setup_navigation.js"),
         include_str!("update_ui.js")
@@ -189,16 +189,21 @@ pub(crate) fn navigation_script() -> String {
     include_str!("desktop_setup.js")
         .replace(r"trial\/", r"app\/")
         .replace(
+            "if (v.saved) { const current = await api('detect'); baseline = current.baseline; }",
+            "if (v.saved) { const current = await api('detect'); baseline = current.baseline; if (!start && typeof seiyaSetupSaved === 'function') seiyaSetupSaved(); }",
+        )
+}
+
+// Opening settings inside a running chat must never trigger the launch shortcut.
+fn standalone_navigation_script() -> String {
+    navigation_script()
+        .replace(
             "let baseline = [], approval = null, busy = false, polling = false, runtimeAvailable = true;",
             "let baseline = [], approval = null, busy = false, polling = false, runtimeAvailable = true;\n   let seiyaInitialPhase = null, seiyaAutoEnterAttempted = false;",
         )
         .replace(
             "el('setupEnter').hidden = v.phase !== 'running';",
             "el('setupEnter').hidden = v.phase !== 'running';\n       if (seiyaInitialPhase === null) seiyaInitialPhase = v.phase === 'starting' && v.restored_host ? 'running' : v.phase;\n       if (seiyaInitialPhase === 'running' && v.phase === 'running' && !busy && !seiyaAutoEnterAttempted) {\n         seiyaAutoEnterAttempted = true;\n         el('setupEnter').click();\n       }",
-        )
-        .replace(
-            "if (v.saved) { const current = await api('detect'); baseline = current.baseline; }",
-            "if (v.saved) { const current = await api('detect'); baseline = current.baseline; if (!start && typeof seiyaSetupSaved === 'function') seiyaSetupSaved(); }",
         )
 }
 async fn status(State(s): State<Arc<Setup>>) -> Json<Value> {

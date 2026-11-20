@@ -81,6 +81,11 @@ async function fixture(available=true, stored=new Map(), initialPhase='unconfigu
    const delayed=await fixture();
    delayed.phase('running');await delayed.ctx.poll();await tick();
    assert.equal(delayed.calls.filter(c=>c.name==='enter').length,0,'newly started host must not auto-enter after initial setup');
+   await delayed.get('setupStop').click();await delayed.ctx.poll();
+   assert.match(delayed.get('setupMessage').textContent,/esperando confirmación/);
+   delayed.phase('saved');await delayed.ctx.poll();
+   assert.match(delayed.get('setupMessage').textContent,/Motores detenidos/);
+   assert.equal(delayed.calls.filter(c=>c.name==='stop').length,1);
    const invalid=await fixture(true,new Map(),'running');
    invalid.enterUrl('https://evil.example/session/'+ 'a'.repeat(64));
    if(!invalid.calls.some(c=>c.name==='enter')){await invalid.ctx.poll();await tick();}
