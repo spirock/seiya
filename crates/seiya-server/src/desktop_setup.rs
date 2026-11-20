@@ -87,6 +87,9 @@ pub(crate) struct Engine {
 }
 pub(crate) trait Adapter: Send + Sync {
     fn available(&self) -> bool;
+    fn allows_update_check(&self) -> bool {
+        true
+    }
     fn allows_unassigned_configuration(&self) -> bool {
         false
     }
@@ -131,6 +134,7 @@ struct Setup {
     home: std::sync::OnceLock<String>,
     adapter: Arc<dyn Adapter>,
     control: Mutex<Control>,
+    updates: Mutex<crate::update_check::UpdateChecker>,
     operation: Arc<Semaphore>,
     bodies: Semaphore,
     mounted: Arc<std::sync::RwLock<Router>>,
@@ -150,6 +154,7 @@ impl Setup {
                 bootstrap: None,
                 restored: false,
             }),
+            updates: Mutex::new(crate::update_check::UpdateChecker::default()),
             operation: Arc::new(Semaphore::new(1)),
             bodies: Semaphore::new(4),
             mounted: Arc::new(std::sync::RwLock::new(Router::new())),
@@ -166,11 +171,12 @@ async fn page() -> Html<String> {
     let source = include_str!("../../../swarm-app/seiya/ui.html");
     let shell = source.split("<script>").next().unwrap();
     Html(format!(
-        "{shell}{}<script>{}\n{}\n{}</script></html>",
+        "{shell}{}<script>{}\n{}\n{}\n{}\nseiyaMountUpdate(location.href);</script></html>",
         include_str!("desktop_setup.html").replace("position:fixed;inset:64px 16px 16px auto;width:min(780px,calc(100% - 32px));overflow:auto;", "max-width:780px;margin:0 auto;"),
         navigation_script(),
         include_str!("desktop_setup_feedback.js"),
-        include_str!("desktop_setup_navigation.js")
+        include_str!("desktop_setup_navigation.js"),
+        include_str!("update_ui.js")
     ))
 }
 pub(crate) fn navigation_script() -> String {
@@ -203,6 +209,42 @@ async fn detect(State(s): State<Arc<Setup>>) -> Response {
             Json(json!({"draft":v.draft,"baseline":v.baseline,"warning":v.warning})).into_response()
         }
         Err(e) => failure(e),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UpdateRequest {
+    consent: bool,
+}
+
+async fn check_update(State(s): State<Arc<Setup>>, Json(request): Json<UpdateRequest>) -> Response {
+    if !request.consent || !s.adapter.allows_update_check() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"error":"update_consent_required"})),
+        )
+            .into_response();
+    }
+    let Ok(mut checker) = s.updates.try_lock() else {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({"error":"update_check_busy"})),
+        )
+            .into_response();
+    };
+    checker.set_enabled(true);
+    match checker.check_stable(env!("CARGO_PKG_VERSION")).await {
+        Ok(Some(update)) => Json(
+            json!({"available":true,"version":update.version,"release_url":update.release_url}),
+        )
+        .into_response(),
+        Ok(None) => Json(json!({"available":false})).into_response(),
+        Err(error) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error":error})),
+        )
+            .into_response(),
     }
 }
 #[derive(Deserialize)]
@@ -458,6 +500,7 @@ fn application_at_with_key(
         .route("/", page_route)
         .route("/api/status", get(status))
         .route("/api/detect", get(detect))
+        .route("/api/update-check", post(check_update))
         .route("/api/pick", post(pick))
         .route("/api/review", post(review))
         .route("/api/confirm", post(confirm))

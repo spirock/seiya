@@ -23,6 +23,7 @@ pub mod runtime;
 pub mod scheduler;
 mod settings_menu;
 mod sse;
+pub mod update_check;
 pub mod web_chat;
 #[cfg(target_os = "macos")]
 pub mod web_diagnostics;

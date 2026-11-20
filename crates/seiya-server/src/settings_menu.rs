@@ -60,8 +60,9 @@ pub(crate) fn render(home: Option<&str>) -> String {
             "",
         );
     format!(
-        "<div id=\"seiyaModelsSource\" hidden>{fragment}</div><script>\nconst seiyaModelsHome={};\nlet seiyaModelsInitialized=false;\nfunction seiyaInitializeModels(){{if(seiyaModelsInitialized)return;if(!seiyaModelsBase)throw Error('Configuración de modelos no disponible.');seiyaModelsInitialized=true;\n{setup}\n{}\n}}\n{}\n</script>",
+        "<div id=\"seiyaModelsSource\" hidden>{fragment}</div><script>\nconst seiyaModelsHome={};\n{}\nlet seiyaModelsInitialized=false;\nfunction seiyaInitializeModels(){{if(seiyaModelsInitialized)return;if(!seiyaModelsBase)throw Error('Configuración de modelos no disponible.');seiyaModelsInitialized=true;\n{setup}\n{}\nseiyaMountUpdate(seiyaModelsBase.href);\n}}\n{}\n</script>",
         serde_json::to_string(&home).unwrap(),
+        include_str!("update_ui.js"),
         include_str!("desktop_setup_feedback.js"),
         include_str!("settings_menu_ui.js"),
     )

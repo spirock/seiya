@@ -4,6 +4,10 @@ use serde::{Deserialize, Serialize};
 pub mod image_job;
 /// Experimental reader framing; not a network broker or an advertised tool.
 pub mod reader_frame;
+/// Offline validation of update metadata; never fetches or installs software.
+pub mod update_manifest;
+/// Offline stable-version comparison; no update transport or installer.
+pub mod update_version;
 
 pub const CONTRACT_VERSION: &str = "1.0-draft.1";
 pub const MAX_PAYLOAD_BYTES: usize = 256 * 1024;

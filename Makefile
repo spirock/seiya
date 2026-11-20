@@ -21,6 +21,7 @@ test-rust:
 	cargo test --workspace --locked
 
 test-image-ui:
+	$(NODE) swarm-app/tests/update_ui.cjs
 	$(NODE) swarm-app/tests/desktop_setup_ui.cjs
 	$(NODE) swarm-app/tests/desktop_setup_navigation.cjs
 	$(NODE) swarm-app/tests/images_ui.cjs

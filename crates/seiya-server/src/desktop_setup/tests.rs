@@ -619,6 +619,48 @@ async fn inert_shell_preserves_styles_and_requires_auth_before_side_effects() {
 }
 
 #[tokio::test]
+async fn update_check_requires_auth_origin_and_explicit_consent() {
+    let (app, prefix, cookie, _, _) = fixture().await;
+    let path = format!("{prefix}api/update-check");
+    assert_eq!(
+        call(&app, &path, "", "", Some(json!({"consent":true})))
+            .await
+            .status(),
+        401
+    );
+    assert_eq!(
+        call(
+            &app,
+            &path,
+            &cookie,
+            "https://foreign.invalid",
+            Some(json!({"consent":true}))
+        )
+        .await
+        .status(),
+        403
+    );
+    assert_eq!(
+        call(&app, &path, &cookie, "", Some(json!({"consent":false})))
+            .await
+            .status(),
+        403
+    );
+    assert_eq!(
+        call(
+            &app,
+            &path,
+            &cookie,
+            "",
+            Some(json!({"consent":false,"url":"https://evil.invalid"}))
+        )
+        .await
+        .status(),
+        422
+    );
+}
+
+#[tokio::test]
 async fn shell_and_mounted_runtime_keep_independent_bootstrap_and_cookie_boundaries() {
     let (app, prefix, cookie, _, state) = fixture().await;
     let (runtime, link) = crate::pair_trial::access::app(

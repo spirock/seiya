@@ -4,6 +4,9 @@ use super::*;
 #[derive(Default)]
 struct Memory(std::sync::Mutex<(u64, Draft)>);
 impl Adapter for Memory {
+    fn allows_update_check(&self) -> bool {
+        false
+    }
     fn available(&self) -> bool {
         true // review/save UI is available, not inference (supports always false).
     }
@@ -187,5 +190,17 @@ mod tests {
         .await;
         assert_eq!(response.status(), StatusCode::CONFLICT);
         assert!(state.control.lock().await.stop.is_none());
+    }
+
+    #[tokio::test]
+    async fn preview_update_check_remains_inert_even_with_consent() {
+        let (tx, _) = watch::channel(false);
+        let state = Setup::new(Arc::new(Memory::default()), tx);
+        let response = super::super::check_update(
+            State(state),
+            Json(super::super::UpdateRequest { consent: true }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 }

@@ -331,7 +331,7 @@ async fn chat_registers_one_job_and_replay_recovers_without_another_model_or_gen
     assert!(response["choices"][0]["message"]["content"]
         .as_str()
         .unwrap()
-        .contains("no confirma"));
+        .contains("Solicitud de imagen registrada."));
     assert_eq!(response["image_job"]["request_id"], id);
     let job = response["image_job"]["job_id"].as_str().unwrap();
     let replay = data(http(&app, "/api/chat", body).await).await;
