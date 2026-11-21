@@ -15,6 +15,9 @@ use tokio::sync::watch;
 pub(crate) struct Desktop {
     root: PathBuf,
     catalog_path: PathBuf,
+    // Production starts always take the stable macOS coordination lease;
+    // only tests with a temporary root set this to false.
+    stable_lease: bool,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -32,7 +35,21 @@ struct Saved {
 }
 impl Desktop {
     pub(crate) fn new(root: PathBuf, catalog_path: PathBuf) -> Self {
-        Self { root, catalog_path }
+        Self {
+            root,
+            catalog_path,
+            stable_lease: true,
+        }
+    }
+    /// Test-only constructor: a temporary root can never satisfy the stable
+    /// coordination directory contract, so the native lease is skipped.
+    #[cfg(test)]
+    pub(crate) fn new_without_stable_lease(root: PathBuf, catalog_path: PathBuf) -> Self {
+        Self {
+            root,
+            catalog_path,
+            stable_lease: false,
+        }
     }
     fn roles_path(&self) -> PathBuf {
         self.root.join("local-model-roles.json")
@@ -371,7 +388,7 @@ impl Adapter for Desktop {
             } else {
                 None
             };
-            let pool = Pool::native(catalog, &self.root)?;
+            let pool = Pool::native(catalog, &self.root, self.stable_lease)?;
             let state = PreparedWeb::local_models(
                 brain,
                 pool.bound(&brain_id),

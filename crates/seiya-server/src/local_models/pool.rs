@@ -75,7 +75,7 @@ impl Drop for Pool {
     }
 }
 impl Pool {
-    pub(crate) fn native(catalog: Catalog, root: &Path) -> Result<Arc<Self>, String> {
+    pub(crate) fn native(catalog: Catalog, root: &Path, stable: bool) -> Result<Arc<Self>, String> {
         let mut endpoints = catalog
             .models
             .iter()
@@ -96,16 +96,24 @@ impl Pool {
         let mut pool = Self::configured(catalog, root, endpoints, Arc::new(Native))?;
         #[cfg(target_os = "macos")]
         {
-            let home = std::path::PathBuf::from(std::env::var_os("HOME").ok_or("home_required")?)
-                .canonicalize()
-                .map_err(|_| "home_required")?;
-            let lease = seiya_observe::image::coordination::Coordination::portable(
-                &home,
-                &root.join("coordination"),
-            )?
-            .acquire()?;
-            Arc::get_mut(&mut pool).unwrap()._native = Some(lease);
+            // `stable` must be true in production: the desktop host takes the
+            // stable coordination lease. Only tests with a temporary root pass
+            // false, because that lease requires the real default directory.
+            if stable {
+                let home =
+                    std::path::PathBuf::from(std::env::var_os("HOME").ok_or("home_required")?)
+                        .canonicalize()
+                        .map_err(|_| "home_required")?;
+                let lease = seiya_observe::image::coordination::Coordination::portable(
+                    &home,
+                    &root.join("coordination"),
+                )?
+                .acquire()?;
+                Arc::get_mut(&mut pool).unwrap()._native = Some(lease);
+            }
         }
+        #[cfg(not(target_os = "macos"))]
+        let _ = stable;
         Ok(pool)
     }
     pub(super) fn configured(

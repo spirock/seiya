@@ -134,7 +134,11 @@ struct Reviewed {
 #[derive(Clone)]
 pub(crate) struct VisualProvider {
     pub role: String,
+    // The optional connector reads these on Linux today; other platforms keep
+    // the provider selection observable without running the connector.
+    #[cfg_attr(not(target_os = "linux"), expect(dead_code))]
     pub model: String,
+    #[cfg_attr(not(target_os = "linux"), expect(dead_code))]
     pub port: u16,
 }
 struct Control {

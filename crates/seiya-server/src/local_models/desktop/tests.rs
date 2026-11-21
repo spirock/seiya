@@ -39,10 +39,13 @@ async fn inventory_uses_registered_binding_and_only_reads_models() {
     offline.bind("127.0.0.1:0".parse().unwrap()).unwrap();
     catalog.models[0].runtime.base_url = format!("http://{}/v1", offline.local_addr().unwrap());
     std::fs::write(&adapter.catalog_path, serde_json::to_vec(&catalog).unwrap()).unwrap();
-    assert_eq!(
+    // Offline must never look advertised or absent. Linux refuses the bound
+    // socket ("unreachable"); macOS drops the SYN and reports the connect
+    // timeout ("timeout"). Both are engine-unavailable classifications.
+    assert!(matches!(
         adapter.inventory("brain-small".into()).await.unwrap(),
-        "unreachable"
-    );
+        "unreachable" | "timeout"
+    ));
 }
 #[test]
 fn image_role_is_interchangeable_and_cas_preserves_models_and_profiles() {
@@ -87,7 +90,7 @@ struct Fixture(PathBuf);
 async fn text_brain_selects_assigned_visual_worker_from_engine_metadata() {
     use axum::{routing::post, Json, Router};
     let f = Fixture::new();
-    let adapter = f.adapter();
+    let adapter = f.adapter_without_stable_lease();
     let (mut catalog, _) = adapter.catalog().unwrap();
     catalog.models[0].supports_tools = true;
     let worker = catalog.models[1].id.clone();
@@ -120,7 +123,8 @@ async fn text_brain_selects_assigned_visual_worker_from_engine_metadata() {
 #[tokio::test]
 async fn new_image_profile_starts_without_preexisting_history() {
     let fixture = Fixture::new();
-    let adapter = Desktop::new(fixture.0.clone(), fixture.0.join("local-models.json"));
+    let adapter =
+        Desktop::new_without_stable_lease(fixture.0.clone(), fixture.0.join("local-models.json"));
     let profile = include_bytes!("../../../../../contracts/local-models/v1/images.example.json");
     let history = fixture.0.join("image-history");
     assert!(!history.exists());
@@ -160,6 +164,17 @@ impl Fixture {
         )
         .unwrap();
         Desktop::new(self.0.clone(), path)
+    }
+    /// `start` with a temporary root cannot take the stable macOS lease.
+    #[cfg(target_os = "macos")]
+    fn adapter_without_stable_lease(&self) -> Desktop {
+        let path = self.0.join("local-models.json");
+        storage::new_file(
+            &path,
+            include_bytes!("../../../../../contracts/local-models/v1/catalog.example.json"),
+        )
+        .unwrap();
+        Desktop::new_without_stable_lease(self.0.clone(), path)
     }
 }
 impl Drop for Fixture {
