@@ -364,6 +364,7 @@ impl Adapter for Fake {
                 Ok(())
             });
             Ok(Engine {
+                vision_provider: None,
                 residency: None,
                 router: Router::new()
                     .route("/session/fake", get(|| async { "runtime-auth-boundary" })),
@@ -518,6 +519,35 @@ async fn fixture() -> (Router, String, String, Arc<Fake>, Arc<Setup>) {
     assert_eq!(call(&app, &path, "", "", None).await.status(), 403);
     (app, prefix, cookie, fake, state)
 }
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn calculator_requires_running_visual_brain_even_for_authenticated_requests() {
+    let (app, prefix, cookie, _, state) = fixture().await;
+    for (phase, vision) in [("running", false), ("stopping", true)] {
+        {
+            let mut c = state.control.lock().await;
+            c.phase = phase;
+            c.vision_provider = vision.then(|| VisualProvider {
+                role: "visual-worker".into(),
+                model: "gemma".into(),
+                port: 21011,
+            });
+        }
+        let response = call(
+            &app,
+            &format!("{prefix}api/assist/sum"),
+            &cookie,
+            "http://127.0.0.1:8015",
+            Some(json!({"a":27,"b":18})),
+        )
+        .await;
+        assert_eq!(
+            json_body(response).await["error"],
+            "assist_requires_vision_provider"
+        );
+    }
+}
+
 #[tokio::test]
 async fn saved_host_starts_once_without_saving_or_dispatching_a_model() {
     for (stored, invalid, expected) in [

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+base=$(cd -- "$(dirname -- "$0")" && pwd)
+session=$(mktemp -d)
+trap 'rm -rf -- "$session"' EXIT
+# A separate profile prevents Writer from forwarding requests to an already-open office.
+mkdir -m 700 "$session/home" "$session/run"
+HOME="$session/home" XDG_RUNTIME_DIR="$session/run" XDG_CONFIG_HOME="$session/home/.config" \
+ XDG_DATA_HOME="$session/home/.local/share" XDG_CACHE_HOME="$session/home/.cache" \
+ env -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS GDK_BACKEND=x11 SAL_USE_VCLPLUGIN=gen \
+ xvfb-run -a -s '-screen 0 1024x768x24 -nolisten tcp' bash -eu -c 'exec 3>&1; exec dbus-run-session -- bash -eu -c "$1" bash "$2" >&2' bash '
+    xfwm4 --compositor=off </dev/null >&2 &
+    /usr/bin/python3 "$1/desktop_menu.py" </dev/null >&2 &
+    exec "$1/venv/bin/python" -I "$1/desktop_mcp.py" >&3 3>&-
+ ' "$base"

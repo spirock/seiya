@@ -311,6 +311,7 @@ impl Adapter for WebAdapter {
                         result
                     });
                     Ok(Engine {
+                        vision_provider: None,
                         residency: None,
                         router,
                         bootstrap: links.bootstrap,

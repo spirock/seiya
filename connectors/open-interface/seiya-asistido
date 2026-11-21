@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Perfil opcional: los únicos servicios gestionados son los iniciados aquí.
+set -euo pipefail
+umask 077
+base="$HOME/.local/share/seiya-open-interface"
+catalog="$base/catalog.json"
+exec 9>"$base/launcher.lock"
+flock -n 9 || exec seiya-rust --launch
+seiya-rust --check-catalog "$catalog" >/dev/null
+python3 - <<'PY'
+import socket
+for port in (8015, 21011, 21431):
+    with socket.socket() as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try: s.bind(("127.0.0.1", port))
+        except OSError: raise SystemExit(f"Puerto {port} ocupado. Detén el perfil anterior antes de cambiar.")
+PY
+run=$(mktemp -d "$base/arranque-XXXXXXXX")
+pids=()
+cleanup() {
+    for pid in "${pids[@]}"; do kill -TERM -- "-$pid" 2>/dev/null || true; done
+    wait || true
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+start_engine() {
+    OLLAMA_HOST="127.0.0.1:$1" OLLAMA_MODELS="$2" OLLAMA_NO_CLOUD=1 OLLAMA_NOPRUNE=1 \
+        setsid ollama serve 9>&- >"$run/$1.log" 2>&1 & pids+=("$!")
+    curl --noproxy '*' -fsS --retry 5 --retry-connrefused --max-time 3 \
+        "http://127.0.0.1:$1/api/tags" | python3 -c \
+        'import sys,json; sys.exit(0 if any(m["name"]==sys.argv[1] for m in json.load(sys.stdin)["models"]) else "Falta el modelo "+sys.argv[1])' "$3"
+    kill -0 "${pids[-1]}"
+}
+start_engine 21011 "$HOME/.local/state/Seiya/ollama-models" qwen2.5:1.5b
+start_engine 21431 "$base/model-store" gemma4:e2b
+echo 'Perfil asistido: Cerebro brain-small; trabajador visual-worker; imágenes vacío.'
+setsid seiya-rust --launch --catalog "$catalog" 9>&- & pids+=("$!")
+wait "${pids[-1]}"

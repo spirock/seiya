@@ -77,7 +77,11 @@ Explorar un modo opcional para que Seiya ayude a usar aplicaciones del sistema y
 el navegador: por ejemplo, abrir una terminal, escribir texto o interactuar con
 una página mediante Playwright. La visión puede permitir interpretar capturas de
 pantalla; para el navegador también se estudiará la información accesible de la
-página. La compatibilidad dependerá del modelo, el motor y el sistema operativo.
+página. Solo se ofrecerá el control asistido si el motor confirma visión para
+el **Cerebro activo** o alguno de sus **trabajadores asignados**. Si el Cerebro
+solo maneja texto, podrá delegar la observación al primer trabajador visual del
+perfil y usar su respuesta para continuar. Una capacidad desconocida se tratará como no disponible;
+tener otro modelo visual instalado o un generador de imágenes no lo habilita.
 
 Esta capacidad **no está implementada ni habilitada**. Antes de activarla se
 definirán permisos separados y revocables para pantalla, aplicaciones, terminal

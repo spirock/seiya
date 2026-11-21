@@ -82,6 +82,67 @@ fn image_role_is_interchangeable_and_cas_preserves_models_and_profiles() {
     assert!(!f.0.join("desktop.json").exists());
 }
 struct Fixture(PathBuf);
+
+#[tokio::test]
+async fn text_brain_selects_assigned_visual_worker_from_engine_metadata() {
+    use axum::{routing::post, Json, Router};
+    let f = Fixture::new();
+    let adapter = f.adapter();
+    let (mut catalog, _) = adapter.catalog().unwrap();
+    catalog.models[0].supports_tools = true;
+    let worker = catalog.models[1].id.clone();
+    catalog.assignments.workers.push(worker.clone());
+    for (i, m) in catalog.models.iter_mut().enumerate() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        m.runtime.base_url = format!("http://{}/v1", listener.local_addr().unwrap());
+        let binding = m.runtime.model.clone();
+        let app = Router::new().route("/api/show", post(move |Json(body): Json<serde_json::Value>| async move {
+            assert_eq!(body["model"], binding);
+            Json(serde_json::json!({"capabilities": if i == 1 { vec!["vision"] } else { vec!["completion"] }}))
+        }));
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    }
+    let (stop, rx) = watch::channel(false);
+    let engine = adapter
+        .start(
+            serde_json::to_vec(&catalog).unwrap(),
+            false,
+            rx,
+            format!("http://127.0.0.1:8015/app/{}/", "a".repeat(32)),
+        )
+        .await
+        .unwrap();
+    assert_eq!(engine.vision_provider.map(|p| p.role), Some(worker));
+    stop.send_replace(true);
+    engine.done.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn new_image_profile_starts_without_preexisting_history() {
+    let fixture = Fixture::new();
+    let adapter = Desktop::new(fixture.0.clone(), fixture.0.join("local-models.json"));
+    let profile = include_bytes!("../../../../../contracts/local-models/v1/images.example.json");
+    let history = fixture.0.join("image-history");
+    assert!(!history.exists());
+    let (stop, rx) = watch::channel(false);
+    let home = format!("http://127.0.0.1:8015/app/{}/", "a".repeat(32));
+    let engine = adapter
+        .start(profile.to_vec(), false, rx, home)
+        .await
+        .unwrap();
+    assert!(history.is_dir());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(history).unwrap().permissions().mode() & 0o077,
+            0
+        );
+    }
+    stop.send_replace(true);
+    engine.done.await.unwrap().unwrap();
+}
+
 impl Fixture {
     fn new() -> Self {
         let p = std::env::temp_dir()

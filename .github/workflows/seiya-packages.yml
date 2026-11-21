@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - 'swarm-app/**'
+      - 'connectors/**'
       - 'docs/**'
       - 'contracts/**'
       - 'crates/**'
@@ -16,6 +17,7 @@ on:
   pull_request:
     paths:
       - 'swarm-app/**'
+      - 'connectors/**'
       - 'docs/**'
       - 'contracts/**'
       - 'crates/**'
@@ -83,15 +85,21 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Unit and archive tests (no model downloads)
         run: python -m unittest discover -s tests -v
+      - name: macOS Rust library tests (no model/runtime startup)
+        if: runner.os == 'macOS'
+        working-directory: .
+        run: |
+          set -o pipefail
+          cargo test --locked -p seiya-server --lib 2>&1 | tee "$RUNNER_TEMP/mac-tests.log" || {
+            grep -E '^(test .* FAILED|error\[|thread .*panicked)' "$RUNNER_TEMP/mac-tests.log" | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          }
       - name: Build experimental Rust executables (no model/runtime startup)
         working-directory: .
         env:
           MACOSX_DEPLOYMENT_TARGET: '13.0'
         run: |
           cargo build --release --locked -p seiya-server --bins
-          if [ "${{ runner.os }}" = "macOS" ]; then
-            cargo test --locked -p seiya-server --lib
-          fi
           mkdir -p native-stage/bin native-dist
           cp target/release/seiya-server target/release/seiya-desktop native-stage/bin/
           if [ "${{ runner.os }}" = "macOS" ]; then

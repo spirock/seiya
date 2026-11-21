@@ -155,16 +155,33 @@ fn download() -> &'static Mutex<Option<Download>> {
     DOWNLOAD.get_or_init(|| Mutex::new(None))
 }
 
-fn installed_models() -> &'static Mutex<HashSet<String>> {
-    static MODELS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-    MODELS.get_or_init(|| Mutex::new(HashSet::new()))
+#[derive(Default)]
+struct Inventory {
+    names: HashSet<String>,
+    listed: bool,
+}
+
+impl Inventory {
+    fn contains(&self, id: &str) -> Option<bool> {
+        if self.names.contains(id) {
+            Some(true)
+        } else {
+            self.listed.then_some(false)
+        }
+    }
+}
+
+fn installed_models() -> &'static Mutex<Inventory> {
+    static MODELS: OnceLock<Mutex<Inventory>> = OnceLock::new();
+    MODELS.get_or_init(|| Mutex::new(Inventory::default()))
 }
 
 /// Comprueba la última lista obtenida explícitamente desde el gestor.
-pub(crate) fn installed(id: &str) -> bool {
+pub(crate) fn installed(id: &str) -> Option<bool> {
     installed_models()
         .lock()
-        .is_ok_and(|models| models.contains(id))
+        .ok()
+        .and_then(|models| models.contains(id))
 }
 
 /// Indica si el gestor local de Ollama está disponible en esta plataforma.
@@ -336,6 +353,42 @@ fn client() -> Result<reqwest::Client, &'static str> {
         .map_err(|_| "ollama_client_unavailable")
 }
 
+/// Consulta solo el motor local validado de la asignación, sin inferencia.
+pub(super) async fn advertises_vision(runtime: &RuntimeConfig) -> bool {
+    async fn probe(runtime: &RuntimeConfig) -> Option<bool> {
+        let mut endpoint = runtime.endpoint().ok()?;
+        endpoint.set_path("/api/show");
+        let mut response = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(std::time::Duration::from_secs(2))
+            .build()
+            .ok()?
+            .post(endpoint)
+            .json(&serde_json::json!({"model":runtime.model}))
+            .send()
+            .await
+            .ok()?
+            .error_for_status()
+            .ok()?;
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.ok()? {
+            if chunk.len() > 1024 * 1024 - bytes.len() {
+                return None;
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        let metadata: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+        Some(
+            metadata["capabilities"]
+                .as_array()?
+                .iter()
+                .any(|cap| cap.as_str() == Some("vision")),
+        )
+    }
+    probe(runtime).await.unwrap_or(false)
+}
+
 /// Lee los modelos residentes del servidor privado; no carga ni descarga pesos.
 pub(super) async fn model_loaded(model: &str) -> Option<bool> {
     #[derive(Deserialize)]
@@ -417,7 +470,8 @@ pub(crate) async fn list() -> Result<serde_json::Value, &'static str> {
         .filter(|model| valid_model_id(&model.name))
         .collect::<Vec<_>>();
     if let Ok(mut installed) = installed_models().lock() {
-        *installed = models.iter().map(|model| model.name.clone()).collect();
+        installed.names = models.iter().map(|model| model.name.clone()).collect();
+        installed.listed = true;
     }
     Ok(serde_json::json!({
         "models": models.into_iter().map(|m| serde_json::json!({
@@ -456,7 +510,7 @@ pub(crate) async fn pull(id: &str) -> Result<serde_json::Value, &'static str> {
         match pull_private(&id).await {
             Ok(()) => {
                 if let Ok(mut installed) = installed_models().lock() {
-                    installed.insert(id);
+                    installed.names.insert(id);
                 }
                 finish(true, "Descarga privada terminada.", None);
             }
@@ -628,7 +682,7 @@ pub(crate) async fn delete(id: &str) -> Result<(), &'static str> {
     stopped.map_err(|_| "ollama_owned_stop_failed")?;
     {
         if let Ok(mut installed) = installed_models().lock() {
-            installed.remove(id);
+            installed.names.remove(id);
         }
     }
     Ok(())
@@ -636,12 +690,27 @@ pub(crate) async fn delete(id: &str) -> Result<(), &'static str> {
 
 #[cfg(test)]
 pub(crate) fn remember_installed_for_test(id: &str) {
-    installed_models().lock().unwrap().insert(id.to_owned());
+    installed_models()
+        .lock()
+        .unwrap()
+        .names
+        .insert(id.to_owned());
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_full_inventory_can_report_an_unlisted_model_as_absent() {
+        let mut inventory = Inventory::default();
+        assert_eq!(inventory.contains("saved"), None);
+        inventory.names.insert("downloaded".into());
+        assert_eq!(inventory.contains("downloaded"), Some(true));
+        assert_eq!(inventory.contains("saved"), None);
+        inventory.listed = true;
+        assert_eq!(inventory.contains("saved"), Some(false));
+    }
 
     #[cfg(target_os = "linux")]
     #[tokio::test]

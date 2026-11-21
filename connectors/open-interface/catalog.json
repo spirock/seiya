@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "id": "brain-small",
+      "runtime": {
+        "id": "brain-small",
+        "model": "qwen2.5:1.5b",
+        "backend": "openai_local",
+        "base_url": "http://127.0.0.1:21011/v1",
+        "timeout_seconds": 120,
+        "max_output_tokens": 256
+      },
+      "supports_tools": true,
+      "max_input_bytes": 16384
+    },
+    {
+      "id": "visual-worker",
+      "runtime": {
+        "id": "visual-worker",
+        "model": "gemma4:e2b",
+        "backend": "openai_local",
+        "base_url": "http://127.0.0.1:21431/v1",
+        "timeout_seconds": 120,
+        "max_output_tokens": 256
+      },
+      "supports_tools": false,
+      "max_input_bytes": 16384
+    }
+  ],
+  "assignments": {
+    "brain": "brain-small",
+    "workers": [
+      "visual-worker"
+    ]
+  },
+  "minimum_available_mib": 2048
+}

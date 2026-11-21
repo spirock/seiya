@@ -60,7 +60,7 @@ impl Desktop {
     fn managed_candidate(draft: &Draft) -> bool {
         super::manager::supported()
             && super::manager::valid_model_id(&draft.roles.brain)
-            && super::manager::installed(&draft.roles.brain)
+            && super::manager::installed(&draft.roles.brain) == Some(true)
             && draft.roles.workers.is_empty()
             && draft.roles.image.is_empty()
             && draft.image_binary.is_empty()
@@ -259,6 +259,11 @@ impl Adapter for Desktop {
                 return Err("ollama_managed_roles_unsupported".into());
             }
             Err(e) if e == "local_catalog_required" && !draft.roles.brain.is_empty() => {
+                if super::manager::supported()
+                    && super::manager::installed(&draft.roles.brain).is_none()
+                {
+                    return Err("ollama_inventory_not_checked".into());
+                }
                 return Err("ollama_model_not_installed".into());
             }
             Err(e) => return Err(e),
@@ -343,6 +348,15 @@ impl Adapter for Desktop {
                 .first()
                 .map(|id| catalog.model(id).unwrap().runtime.model.clone());
             let brain_id = catalog.assignments.brain.clone();
+            let candidates = std::iter::once(&brain_id)
+                .chain(&catalog.assignments.workers)
+                .map(|id| {
+                    catalog
+                        .model(id)
+                        .map(|m| (id.clone(), m.runtime.clone()))
+                        .map_err(|e| e.to_string())
+                })
+                .collect::<Result<Vec<_>, _>>()?;
             let image_chat = catalog.image_chat;
             let has_image = catalog.image.is_some();
             let web = if catalog.web_search {
@@ -372,10 +386,12 @@ impl Adapter for Desktop {
                 state
             };
             let state = if has_image {
+                let history = self.root.join("image-history");
+                storage::ensure_directory(&history)?;
                 let images = crate::image_jobs::ImageJobs::persistent(
                     Arc::new(super::images::Images(pool.clone())),
                     pool.clone(),
-                    &self.root.join("image-history"),
+                    &history,
                 )?;
                 let state = state.with_images(images).map_err(|e| e.to_string())?;
                 if image_chat {
@@ -411,6 +427,24 @@ impl Adapter for Desktop {
             let (probe, mut requests) =
                 tokio::sync::mpsc::channel::<tokio::sync::oneshot::Sender<Option<bool>>>(1);
             let residency = managed_model.as_ref().map(|_| probe.clone());
+            let mut vision_provider = None;
+            for (id, runtime) in candidates {
+                if *stop.borrow() {
+                    break;
+                }
+                if super::manager::advertises_vision(&runtime).await {
+                    vision_provider = Some(crate::desktop_setup::VisualProvider {
+                        role: id,
+                        port: runtime
+                            .endpoint()
+                            .map_err(|e| e.to_string())?
+                            .port()
+                            .ok_or("missing_local_port")?,
+                        model: runtime.model,
+                    });
+                    break;
+                }
+            }
             drop(probe);
             let done = tokio::spawn(async move {
                 if let (Some(child), Some(model)) = (&mut owned_ollama, managed_model) {
@@ -446,6 +480,7 @@ impl Adapter for Desktop {
                 }
             });
             Ok(Engine {
+                vision_provider,
                 residency,
                 router,
                 bootstrap,

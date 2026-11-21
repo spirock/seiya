@@ -58,7 +58,8 @@
     if (code === 'ollama_pull_failed') return 'Ollama informó un error durante la descarga.';
     if (code === 'ollama_stream_error' || code === 'ollama_invalid_response') return 'Ollama devolvió una respuesta que Seiya no pudo leer.';
     if (code === 'ollama_delete_rejected') return 'Ollama no pudo eliminar ese modelo.';
-    if (code === 'ollama_model_not_installed') return 'El modelo no aparece en el almacén privado de Seiya. Descárgalo desde el gestor; no se copiarán modelos del servicio compartido.';
+    if (code === 'ollama_inventory_not_checked') return 'Aún no se ha consultado el almacén privado. Pulsa «Consultar modelos instalados» y vuelve a revisar la configuración.';
+    if (code === 'ollama_model_not_installed') return 'El modelo no aparece en el último inventario privado. Comprueba el ID, selecciona uno de la lista o descarga el que necesitas.';
     if (code === 'ollama_managed_roles_unsupported') return 'El modo Ollama privado admite solo un Cerebro, sin trabajadores ni imágenes.';
     if (code === 'ollama_owned_port_busy') return 'El puerto privado de Seiya está ocupado. No se conectó ni adoptó el proceso que lo usa.';
     if (code === 'ollama_owned_start_timeout') return 'La instancia privada de Ollama no respondió a tiempo; Seiya la detuvo.';

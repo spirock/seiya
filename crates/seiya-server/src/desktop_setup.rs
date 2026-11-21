@@ -82,6 +82,7 @@ pub(crate) struct Approval {
 pub(crate) type ResidencyProbe =
     tokio::sync::mpsc::Sender<tokio::sync::oneshot::Sender<Option<bool>>>;
 pub(crate) struct Engine {
+    pub vision_provider: Option<VisualProvider>,
     pub residency: Option<ResidencyProbe>,
     pub router: Router,
     pub bootstrap: String,
@@ -130,7 +131,14 @@ struct Reviewed {
     token: String,
     approval: Approval,
 }
+#[derive(Clone)]
+pub(crate) struct VisualProvider {
+    pub role: String,
+    pub model: String,
+    pub port: u16,
+}
 struct Control {
+    vision_provider: Option<VisualProvider>,
     residency: Option<ResidencyProbe>,
     phase: &'static str,
     error: Option<String>,
@@ -156,6 +164,7 @@ impl Setup {
             home: std::sync::OnceLock::new(),
             adapter,
             control: Mutex::new(Control {
+                vision_provider: None,
                 residency: None,
                 phase: "unconfigured",
                 error: None,
@@ -216,6 +225,7 @@ async fn status(State(s): State<Arc<Setup>>) -> Json<Value> {
     Json(
         json!({"platform":crate::platform::current().os.name(),"architecture":crate::platform::current().architecture,"runtime_available":s.adapter.available(),
         "phase":c.phase,"error":c.error,"chat":c.chat,"restored_host":c.restored,"residency_supported":c.phase=="running" && c.residency.is_some(),
+        "vision_provider":c.vision_provider.as_ref().filter(|_| c.phase=="running").map(|p| &p.role),
         "inventory_supported":s.adapter.inventory_supported(),"model_manager_supported":crate::local_models::manager::supported(),"automatic_inference_requested":false,"inference_tested":false}),
     )
 }
@@ -482,6 +492,7 @@ fn start_host(
                 } else {
                     c.phase = "running";
                     c.residency = engine.residency;
+                    c.vision_provider = engine.vision_provider;
                     c.chat = Some(engine.home);
                     c.bootstrap = Some(engine.bootstrap);
                 }
@@ -495,6 +506,7 @@ fn start_host(
                 let mut c = s.control.lock().await;
                 c.chat = None;
                 c.residency = None;
+                c.vision_provider = None;
                 c.bootstrap = None;
                 c.phase = if result.is_ok() { "saved" } else { "blocked" };
                 c.error = result.err();
@@ -609,7 +621,16 @@ fn application_at_with_key(
         .route("/api/confirm", post(confirm))
         .route("/api/enter", post(enter))
         .route("/api/stop", post(stop))
-        .route("/api/quit", post(quit))
+        .route("/api/quit", post(quit));
+    #[cfg(target_os = "linux")]
+    let inner = if address.port() == 8015 {
+        inner
+            .route("/api/assist/sum", post(calculator::open))
+            .route("/api/assist/goal", post(calculator::goal))
+    } else {
+        inner
+    };
+    let inner = inner
         .layer(DefaultBodyLimit::max(128 * 1024))
         .layer(axum::middleware::from_fn_with_state(s.clone(), admission))
         .with_state(s.clone());
@@ -684,9 +705,15 @@ async fn run_at(
         return Err("desktop_port_not_allowed".into());
     }
     let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = tokio::net::TcpListener::bind(address)
-        .await
-        .map_err(|_| "desktop_port_busy_no_adoption")?;
+    let listener = match tokio::net::TcpListener::bind(address).await {
+        Ok(listener) => listener,
+        #[cfg(target_os = "linux")]
+        Err(e) if port == 8015 && e.kind() == std::io::ErrorKind::AddrInUse => {
+            let home = reopen::current().await?;
+            return open(home).await.map(|_| ());
+        }
+        Err(_) => return Err("desktop_port_busy_no_adoption".into()),
+    };
     let (shutdown, mut rx) = watch::channel(false);
     let signal_shutdown = shutdown.clone();
     let signal = tokio::spawn(async move {
@@ -694,7 +721,7 @@ async fn run_at(
         signal_shutdown.send_replace(true);
     });
     let state = Setup::new(adapter, shutdown.clone());
-    let (app, bootstrap, _) = if port == 8015 {
+    let (app, bootstrap, _home) = if port == 8015 {
         application(state.clone())
     } else {
         application_at_with_key(
@@ -702,6 +729,12 @@ async fn run_at(
             address,
             Some(crate::pair_trial::access::test_key()?),
         )
+    };
+    #[cfg(target_os = "linux")]
+    let _reopen = if port == 8015 {
+        Some(reopen::serve(_home)?)
+    } else {
+        None
     };
     // A previously approved manager can prepare the host again, not a model.
     // Missing/invalid state stays visible in setup; never retry or rewrite it.
@@ -817,7 +850,11 @@ impl Adapter for Unsupported {
 pub async fn launch() -> Result<(), String> {
     launch_catalog(None).await
 }
+#[cfg(target_os = "linux")]
+mod calculator;
 mod preview;
+#[cfg(target_os = "linux")]
+mod reopen;
 /// Local UI-only test server on 8016. Never constructs a native runtime adapter.
 pub async fn launch_preview() -> Result<(), String> {
     preview::launch().await

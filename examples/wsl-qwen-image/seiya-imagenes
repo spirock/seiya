@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Lanzador del perfil de evaluación preparado; no descarga ni genera imágenes.
+set -euo pipefail
+umask 077
+root="$HOME/.local/share/seiya-image"
+catalog="$root/catalog-qwen.json"
+exec 9>"$root/launcher.lock"
+if ! flock -n 9; then
+    exec seiya-rust --launch
+fi
+if ! python3 - <<'PY'
+import socket
+for port in (8015, 21011, 21012):
+    with socket.socket() as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try: s.bind(("127.0.0.1", port))
+        except OSError: raise SystemExit(f"El puerto {port} está ocupado. No se ha cambiado el perfil activo.")
+PY
+then exit 1; fi
+seiya-rust --check-catalog "$catalog" >/dev/null
+command -v ollama >/dev/null
+[[ -x "$root/runtime/build/bin/sd-cli" ]] || { echo "Falta sd-cli en $root/runtime/build/bin" >&2; exit 1; }
+run=$(mktemp -d "$root/arranque-XXXXXXXX")
+pids=()
+cleanup() {
+    for pid in "${pids[@]}"; do kill -TERM -- "-$pid" 2>/dev/null || true; done
+    wait || true
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+setsid python3 "$root/qwen_endpoint.py" 9>&- >"$run/imagen.log" 2>&1 & pids+=("$!")
+OLLAMA_HOST=127.0.0.1:21011 OLLAMA_NO_CLOUD=1 OLLAMA_NOPRUNE=1 \
+    OLLAMA_MODELS="$HOME/.local/state/Seiya/ollama-models" \
+    setsid ollama serve 9>&- >"$run/texto.log" 2>&1 & pids+=("$!")
+for port in 21011 21012; do
+    curl --noproxy '*' --retry 5 --retry-connrefused --retry-max-time 12 --max-time 2 \
+        -fsS "http://127.0.0.1:$port/v1/models" >/dev/null ||
+        { echo "Motor no disponible. Registros: $run" >&2; exit 1; }
+done
+for pid in "${pids[@]}"; do kill -0 "$pid"; done
+setsid seiya-rust --launch --catalog "$catalog" 9>&- & pids+=("$!")
+wait "${pids[-1]}"

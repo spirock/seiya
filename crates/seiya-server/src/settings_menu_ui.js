@@ -58,5 +58,51 @@ if(typeof seiyaShowDiagnostics==='function'){
  const previous=seiyaShowDiagnostics;seiyaShowDiagnostics=function(data){previous(data);seiyaGeneralSettings.hidden=seiyaSettingsView!=='general';seiyaSettingsRoot.setAttribute('aria-expanded',String(!seiyaSettingsMenu.hidden));};
 }
 const seiyaModelsLink=document.getElementById('seiyaModelsSettingsLink');
+// Solo intercepta una petición escrita por el usuario en el formulario local.
+if(seiyaModelsBase?.port==='8015'){
+ let launching=false;
+ const desktop=document.createElement('button');desktop.type='button';desktop.textContent='Usar escritorio';desktop.title='Enviar lo que has escrito al trabajador visual en el escritorio de prueba';
+ $('form').append(desktop);
+ desktop.onclick=async()=>{
+  const goal=$('prompt').value.trim(),chat=activeChat();
+  if(!goal||busy||launching)return;
+  launching=true;busy=true;desktop.disabled=true;$('send').disabled=true;
+  $('status').textContent='El modelo visual está observando y usando el escritorio de prueba…';
+  try{
+   const response=await fetch(new URL('api/assist/goal',seiyaModelsBase.href),{method:'POST',credentials:'same-origin',redirect:'error',headers:{'Content-Type':'application/json'},body:JSON.stringify({goal})});
+   const data=await response.json();
+   if(!response.ok||typeof data.result?.summary!=='string')throw Error(data.error==='assist_requires_vision_provider'?'Asigna un Cerebro o trabajador visual.':'No se confirmó la tarea del escritorio.');
+   const answer=data.provider+' · '+data.result.summary+' · Captura: '+data.result.capture;
+   chat.messages.push({role:'user',content:goal},{role:'assistant',content:answer});
+   if(chat.messages.length===2)chat.title=goal.slice(0,60);
+   if($('prompt').value.trim()===goal){chat.draft='';$('prompt').value='';}
+   $('welcome').hidden=true;render('user',goal);render('assistant',answer);updatePicker();saveChats();
+   $('status').textContent='Tarea terminada según la observación del modelo.';
+  }catch(e){$('status').textContent=e.message;}finally{busy=false;launching=false;desktop.disabled=false;$('send').disabled=false;}
+ };
+ $('form').addEventListener('submit',async event=>{
+  const match=/^(?:abre (?:la )?calculadora y suma|\/sumar)\s+(\d{1,6})\s*(?:\+|y|\s)\s*(\d{1,6})[.!]?$/i.exec($('prompt').value.trim());
+  if(!match)return;
+  event.preventDefault();event.stopImmediatePropagation();
+  if(busy||launching)return;
+  launching=true;busy=true;
+  const chat=activeChat(),text=$('prompt').value.trim();
+  $('send').disabled=true;
+  $('status').textContent='Open Interface está leyendo el visor de la calculadora…';
+  try{
+   const response=await fetch(new URL('api/assist/sum',seiyaModelsBase.href),{method:'POST',credentials:'same-origin',redirect:'error',headers:{'Content-Type':'application/json'},body:JSON.stringify({a:Number(match[1]),b:Number(match[2])})});
+   const data=await response.json();
+   if(data.error==='assist_requires_vision_provider')throw Error('Control asistido no disponible: asigna un Cerebro o un trabajador con visión confirmada.');
+   if(data.error==='connector_not_installed')throw Error('Instala el conector opcional Open Interface para usar la calculadora.');
+   if(!response.ok||typeof data.observed!=='string')throw Error(data.error==='calculator_already_open'?'El conector ya está atendiendo otra suma.':'El conector no pudo confirmar la lectura de la calculadora.');
+   const answer='Open Interface · '+data.provider+' leyó '+data.observed+' en la calculadora.';
+   chat.messages.push({role:'user',content:text},{role:'assistant',content:answer});
+   if(chat.messages.length===2)chat.title=text.slice(0,60);
+   if($('prompt').value.trim()===text){chat.draft='';$('prompt').value='';}
+   $('welcome').hidden=true;render('user',text);render('assistant',answer);
+   updatePicker();saveChats();$('status').textContent='Lectura visual confirmada.';
+  }catch(e){$('status').textContent=e.message||'No se pudo abrir la calculadora.';}finally{launching=false;busy=false;$('send').disabled=false;}
+ },true);
+}
 if(seiyaModelsLink)seiyaModelsLink.onclick=event=>{event.preventDefault();seiyaOpenSettings('models');};
 function seiyaSetupSaved(){seiyaCloseSettings();$('status').textContent='Configuración guardada sin iniciar motores. Guardar no recupera un runtime bloqueado.';}

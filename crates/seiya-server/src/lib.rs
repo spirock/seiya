@@ -710,3 +710,5 @@ impl BoundServer {
         result
     }
 }
+#[cfg(test)]
+mod assist_proposal;
