@@ -165,8 +165,9 @@ impl Fixture {
         .unwrap();
         Desktop::new(self.0.clone(), path)
     }
-    /// `start` with a temporary root cannot take the stable macOS lease.
-    #[cfg(target_os = "macos")]
+    /// `start` with a temporary root cannot take the stable macOS lease; on
+    /// other platforms the native lease does not apply, but the seam is kept
+    /// uniform so tests behave the same everywhere.
     fn adapter_without_stable_lease(&self) -> Desktop {
         let path = self.0.join("local-models.json");
         storage::new_file(
