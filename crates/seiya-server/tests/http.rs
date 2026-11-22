@@ -50,7 +50,13 @@ async fn discovery_matches_shared_python_golden_bodies() {
             .unwrap();
         let (status, _, body) = response(router(Some(TOKEN)), request).await;
         assert_eq!(status.as_u16() as u64, step["status"].as_u64().unwrap());
-        assert_eq!(body, step["expected"]);
+        let mut expected = step["expected"].clone();
+        // The shared fixture records Python's version. Rust reports its own
+        // independently versioned package while preserving the response shape.
+        if step["path"] == "/health" {
+            expected["version"] = env!("CARGO_PKG_VERSION").into();
+        }
+        assert_eq!(body, expected);
     }
 }
 

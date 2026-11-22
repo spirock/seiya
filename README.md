@@ -31,7 +31,7 @@ stays HTML/CSS/JavaScript. **Pegassus** is the public model identity
 GitHub Actions updates both language versions after the complete build succeeds.
 Artifacts are delivered inside ZIP archives, may require a GitHub login, and
 expire under GitHub's retention policy. Check the build commit in
-`BUILD-INFO.json`: the filename alone, currently version 0.1.0, is not enough.
+`BUILD-INFO.json`: a filename or version alone is not enough.
 
 On macOS, open the new DMG and drag **Seiya Rust.app** to **Applications**,
 then open it from Applications. The separate optional PKG also installs terminal

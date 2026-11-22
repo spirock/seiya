@@ -19,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = '0.1.0'
+RUST_VERSION = '0.1.1'
 ICON_SIZES = (16, 24, 32, 48, 64, 128, 256, 512, 1024)
 
 
@@ -212,7 +213,7 @@ def rust_stage(root, binaries, mac, arch, libc_min=None, revision=None):
         lib, doc = app + 'MacOS/', app + 'Resources/'
     else:
         lib, doc = '/usr/lib/seiya-rust/bin/', '/usr/share/doc/seiya-rust-experimental/'
-    info = {'version': VERSION, 'implementation': 'rust-experimental', 'platform': 'macos' if mac else 'linux',
+    info = {'version': RUST_VERSION, 'implementation': 'rust-experimental', 'platform': 'macos' if mac else 'linux',
             'arch': arch, 'revision': revision, 'libc_min': libc_min, 'binaries': {}}
     for name, source in selected.items():
         target = root / (lib + name).lstrip('/')
@@ -246,7 +247,7 @@ def rust_stage(root, binaries, mac, arch, libc_min=None, revision=None):
             'CFBundleIdentifier': 'local.seiya.rust.experimental', 'CFBundleName': 'Seiya Rust',
             'CFBundleExecutable': 'Seiya', 'CFBundlePackageType': 'APPL',
             'CFBundleIconFile': 'seiya.icns',
-            'CFBundleShortVersionString': VERSION, 'CFBundleVersion': VERSION,
+            'CFBundleShortVersionString': RUST_VERSION, 'CFBundleVersion': RUST_VERSION,
             'LSMinimumSystemVersion': '13.0'}))
         write(root, app + 'MacOS/Seiya', '''#!/bin/sh
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -316,7 +317,7 @@ def rust_deb(output, binaries, arch, libc_min, revision=None):
         root, control = Path(tmp) / 'root', Path(tmp) / 'control'
         rust_stage(root, binaries, False, arch, libc_min, revision)
         write(control, 'control', f'''Package: seiya-rust-experimental
-Version: {VERSION}
+Version: {RUST_VERSION}
 Section: utils
 Priority: optional
 Architecture: {arch}
@@ -338,7 +339,7 @@ def rust_pkg(output, binaries, arch, revision=None):
         rust_stage(root, binaries, True, arch, revision=revision)
         subprocess.run(['/usr/bin/xattr', '-cr', str(root)], check=True)
         subprocess.run(['pkgbuild', '--root', str(root), '--identifier', 'local.seiya.rust.experimental',
-                        '--version', VERSION, '--install-location', '/', '--ownership', 'recommended',
+                        '--version', RUST_VERSION, '--install-location', '/', '--ownership', 'recommended',
                         '--filter', r'/\._', str(output)], check=True,
                        env={**os.environ, 'COPYFILE_DISABLE': '1'})
 
@@ -402,7 +403,7 @@ def rust_dmg(output, binaries, arch, revision=None):
             for file in sorted(root.rglob('*')) if file.is_file() and not file.is_symlink())
         (root / 'SHA256SUMS').write_text(manifest, encoding='utf-8')
         subprocess.run(['/usr/bin/xattr', '-cr', str(root / 'Seiya Rust.app')], check=True)
-        subprocess.run(['hdiutil', 'create', '-volname', f'Seiya-Rust-{VERSION}-{arch}',
+        subprocess.run(['hdiutil', 'create', '-volname', f'Seiya-Rust-{RUST_VERSION}-{arch}',
                         '-srcfolder', str(root), '-format', 'UDZO', '-ov', str(output)], check=True,
                        env={**os.environ, 'COPYFILE_DISABLE': '1'})
 
@@ -423,14 +424,14 @@ def main():
     built = []
     if args.implementation == 'rust':
         if args.target == 'deb':
-            output = args.output.resolve() / f'seiya-rust-experimental_{VERSION}_{args.arch}.deb'
+            output = args.output.resolve() / f'seiya-rust-experimental_{RUST_VERSION}_{args.arch}.deb'
             rust_deb(output, args.bin_dir, args.arch, args.libc_min, args.revision)
         else:
-            output = args.output.resolve() / f'Seiya-Rust-{VERSION}-{args.arch}.pkg'
+            output = args.output.resolve() / f'Seiya-Rust-{RUST_VERSION}-{args.arch}.pkg'
             rust_pkg(output, args.bin_dir, args.arch, args.revision)
         built.append(output)
         if args.target == 'dmg':
-            image = args.output.resolve() / f'Seiya-Rust-{VERSION}-{args.arch}.dmg'
+            image = args.output.resolve() / f'Seiya-Rust-{RUST_VERSION}-{args.arch}.dmg'
             rust_dmg(image, args.bin_dir, args.arch, args.revision)
             built.append(image)
     else:

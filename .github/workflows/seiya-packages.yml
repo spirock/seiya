@@ -201,7 +201,7 @@ jobs:
           python swarm-app/packaging/windows.py zip --bin-dir target/x86_64-pc-windows-msvc/release --output dist/windows-portable --revision "$env:GITHUB_SHA"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $payload = Join-Path $env:RUNNER_TEMP 'seiya-windows-payload'
-          Expand-Archive -Path dist/windows-portable/Seiya-Rust-0.1.0-windows-x64.zip -DestinationPath $payload
+          Expand-Archive -Path dist/windows-portable/Seiya-Rust-0.1.1-windows-x64.zip -DestinationPath $payload
           python swarm-app/packaging/windows.py inspect --payload-dir "$payload"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & "$payload/seiya-desktop.exe" --help

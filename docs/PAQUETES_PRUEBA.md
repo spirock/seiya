@@ -4,7 +4,7 @@ Sin pesos, credenciales, sesiones o motores MLX/Ollama/sd.cpp incluidos. No
 instalación, carga de modelos, servicios o permisos automáticos. Artefactos de
 prueba sin firma/notarización; no release autónoma ni paridad completa con Python.
 [Guía de instalación manual y feedback](PRUEBA_INSTALADOR.md). Verificar el SHA
-del build en README/BUILD-INFO.json; no basta con el nombre versión0.1.0.
+del build en README/BUILD-INFO.json; no basta con la versión del archivo.
 
 ## Instaladores Rust nuevos
 
@@ -41,12 +41,12 @@ se acredita con un run concreto, no por modificar el YAML. Los enlaces del run
 anterior43456809371 siguen conteniendo los **paquetes Python antiguos**.
 Run43487352926 confirmó paquetes Rust Linux/macOS para b525f83; no incluía Windows.
 
-- Debian: `seiya-rust-experimental_0.1.0_amd64.deb` o `_arm64.deb`. Instala
+- Debian: `seiya-rust-experimental_<versión>_amd64.deb` o `_arm64.deb`. Instala
   `seiya-rust` (ayuda/chequeo offline) y `seiya-rust-server` (API Rust existente).
   No depende de Python; requiere GNU libc/libgcc compatibles y runtime externo
   para inferencia. Linux **no soporta** el host --serve macOS, MLX/Metal o imagen
   nativa por instalar este paquete. Entrada de escritorio muestra ayuda CLI.
-- macOS: `Seiya-Rust-0.1.0-ARCH.pkg` opcional y `.dmg` de arrastrar la app.
+- macOS: `Seiya-Rust-<versión>-ARCH.pkg` opcional y `.dmg` de arrastrar la app.
   El PKG instala `Seiya Rust.app`, `seiya-rust` y `seiya-rust-server`; el DMG
   permite copiar solo la app autocontenida. macOS13+,
   arquitectura concreta (amd64=Intel, arm64=Apple Silicon), no universal.

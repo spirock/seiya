@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import re
 import shutil
 import struct
 import unittest
@@ -52,6 +53,14 @@ def members(deb):
 
 
 class RustPackagingTests(unittest.TestCase):
+    def test_rust_package_version_matches_workspace_without_changing_legacy(self):
+        workspace = (build.ROOT.parent / 'Cargo.toml').read_text()
+        package = workspace.split('[workspace.package]', 1)[1].split('[', 1)[0]
+        version = re.search(r'^version = "([^"]+)"$', package, re.MULTILINE)
+        self.assertIsNotNone(version)
+        self.assertEqual(build.RUST_VERSION, version.group(1))
+        self.assertEqual(build.VERSION, '0.1.0')
+
     def test_approved_icon_manifest_and_multiresolution_containers(self):
         folder = build.ROOT / 'packaging/icons'
         manifest = json.loads((folder / 'manifest.json').read_text())
@@ -231,7 +240,7 @@ class RustPackagingTests(unittest.TestCase):
             result = subprocess.run(command + ['--bin-dir', str(source), '--arch', 'amd64', '--libc-min', '2.39'], capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             sums = (out / 'SHA256SUMS').read_text()
-            self.assertIn('seiya-rust-experimental_0.1.0_amd64.deb', sums)
+            self.assertIn('seiya-rust-experimental_0.1.1_amd64.deb', sums)
             self.assertNotIn('old.pkg', sums)
             self.assertEqual((out / 'old.pkg').read_bytes(), b'untouched')
 

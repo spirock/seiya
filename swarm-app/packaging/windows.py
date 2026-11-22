@@ -9,7 +9,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from build import ROOT, VERSION, write, stage_icons, verify_icons
+from build import ROOT, RUST_VERSION as VERSION, write, stage_icons, verify_icons
 
 
 FILES = {'seiya-desktop.exe', 'seiya-server.exe', 'README.md', 'LICENSE',

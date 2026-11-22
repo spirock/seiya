@@ -1,7 +1,7 @@
 # Probar el instalador experimental
 
 Los enlaces verificados están en el bloque Descargas del README del repositorio.
-Cada conjunto identifica run y commit. Los nombres siguen usando versión0.1.0;
+Cada conjunto identifica run y commit. Comprueba la versión de cada paquete;
 para distinguir builds comparar el commit en BUILD-INFO.json y SHA256SUMS, no
 solo el nombre del archivo. Los artefactos Actions pueden exigir sesión GitHub.
 
